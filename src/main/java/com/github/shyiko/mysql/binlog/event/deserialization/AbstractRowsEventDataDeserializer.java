@@ -22,9 +22,8 @@ import com.github.shyiko.mysql.binlog.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.Serializable;
 import java.math.BigDecimal;
-import java.nio.ByteBuffer;
-import java.sql.Time;
-import java.util.Arrays;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.BitSet;
 import java.util.Calendar;
 import java.util.Map;
@@ -74,6 +73,8 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
     public static final long SECOND_IN_MILLIS = 1000;
     public static final long MINUTE_IN_MILLIS = SECOND_IN_MILLIS * 60;
     public static final long HOUR_IN_MILLIS = MINUTE_IN_MILLIS * 60;
+    public static final long MINUTE_IN_SECS = 60;
+    public static final long HOUR_IN_SECS = MINUTE_IN_SECS * 60;
 
     private final Map<Long, TableMapEventData> tableMapEventByTableId;
 
@@ -308,24 +309,20 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
 
             + fractional-seconds storage (size depends on meta)
         */
-        long time = bigEndianLong(inputStream.read(3), 0, 3);
+        int data = bigEndianIntegerNew(inputStream.read(3), 0, 3);
 
-        int fsp = deserializeFractionalSeconds(meta, inputStream);
-        int signBit= bitSlice(time, 0, 1, 24);
-        int sign = 1;
-        if (signBit == 0) {
-            sign = -1;
-            time = ~time + 1;
-        }
-        int hour = bitSlice(time, 2, 10, 24);
-        int minute = bitSlice(time, 12, 6, 24);
-        int second = bitSlice(time, 18, 6, 24);
+        int sign = (bitSlice(data, 0, 1, 24) == 1) ? 1 : -1;
 
-        Long timestamp = java.time.Instant.ofEpochMilli(sign * (hour * HOUR_IN_MILLIS + minute * MINUTE_IN_MILLIS + second * SECOND_IN_MILLIS)).toEpochMilli();
-        if (deserializeDateAndTimeAsLong) {
-            return castTimestamp(timestamp, fsp);
+        if (sign == -1) {
+            data = ~data + 1;
         }
-        return timestamp != null ? convertLongTimestamptWithFSP(timestamp, fsp) : null;
+
+        int fsp = deserializeFractionalSecondsNew(meta, inputStream);
+        int hour = bitSlice(data, 2, 10, 24);
+        int minute = bitSlice(data, 12, 6, 24);
+        int second = bitSlice(data, 18, 6, 24);
+
+        return Instant.ofEpochSecond(sign * (hour * HOUR_IN_SECS + minute * MINUTE_IN_SECS + second), fsp * 1000L);
     }
 
     protected Serializable deserializeTimestamp(ByteArrayInputStream inputStream) throws IOException {
@@ -459,6 +456,15 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return UnixTime.from(year, month, day, hour, minute, second, millis);
     }
 
+    protected int deserializeFractionalSecondsNew(int meta, ByteArrayInputStream inputStream) throws IOException {
+        int length = (meta + 1) / 2;
+        if (length > 0) {
+            int fraction = bigEndianIntegerNew(inputStream.read(length), 0, length);
+            return fraction * (int) Math.pow(100, 3 - length);
+        }
+        return 0;
+    }
+
     protected int deserializeFractionalSeconds(int meta, ByteArrayInputStream inputStream) throws IOException {
         int length = (meta + 1) / 2;
         if (length > 0) {
@@ -528,6 +534,18 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         for (int i = offset; i < (offset + length); i++) {
             byte b = bytes[i];
             result = (result << 8) | (b >= 0 ? (int) b : (b + 256));
+        }
+        return result;
+    }
+
+    private static int bigEndianIntegerNew(byte[] bytes, int offset, int length) {
+        int result = 0;
+        for (int i = offset; i < (offset + length); i++) {
+            int b = bytes[i] & 0xFF;
+            result = result << 8 | b;
+        }
+        if (result >= 0x800000) {
+            result -= 0x1000000;
         }
         return result;
     }
