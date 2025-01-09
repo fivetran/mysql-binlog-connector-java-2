@@ -57,6 +57,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLSyntaxErrorException;
 import java.sql.Statement;
+import java.time.Instant;
 import java.util.AbstractMap;
 import java.util.Base64;
 import java.util.BitSet;
@@ -251,6 +252,38 @@ public class BinaryLogClientIntegrationTest extends AbstractIntegrationTest {
     public void testDeserializationOfTIME() throws Exception {
         assertEquals(writeAndCaptureRow("time", "'1:2:3.000000'"), new Serializable[]{
             generateTime(1970, 1, 1, 1, 2, 3, 0)});
+    }
+
+    @Test
+    public void testDeserializationOfTIMENew() throws Exception {
+        final BinaryLogClient client = new BinaryLogClient(slave.hostname, slave.port,
+            slave.username, slave.password);
+        EventDeserializer eventDeserializer = new EventDeserializer();
+        eventDeserializer.setCompatibilityMode(CompatibilityMode.USE_NEW_TIME_DESERIALIZER);
+        client.setEventDeserializer(eventDeserializer);
+        client.connect(DEFAULT_TIMEOUT);
+        try {
+//            assertEquals(writeAndCaptureRow("time", "'00:00:00'"), new Serializable[]{
+//                Instant.parse("1970-01-01T00:00:00Z")});
+            assertEquals(writeAndCaptureRow("time(6)", "'838:59:58.123456'"), new Serializable[]{
+                Instant.parse("1970-02-04T22:59:58.123456Z")
+            });
+//            assertEquals(writeAndCaptureRow("time(6)", "'-00:00:00.999999'"), new Serializable[]{
+//                Instant.parse("1969-12-31T23:59:59.000001Z")
+//            });
+//            assertEquals(writeAndCaptureRow("time", "'838:59:59'"), new Serializable[]{
+//                Instant.parse("1970-02-04T22:59:59Z")});
+//            assertEquals(writeAndCaptureRow("time", "'-838:59:59'"), new Serializable[]{
+//                Instant.parse("1969-11-27T01:00:01Z")});
+//            assertEquals(writeAndCaptureRow("time", "'-01:00:00'"), new Serializable[]{
+//                Instant.parse("1969-12-31T23:00:00Z")});
+//            assertEquals(writeAndCaptureRow("time", "'-00:00:01'"), new Serializable[]{
+//                Instant.parse("1969-12-31T23:59:59Z")});
+//            assertEquals(writeAndCaptureRow("time", "'-01:00:00'"), new Serializable[]{
+//                Instant.parse("1969-12-31T23:00:00Z")});
+        } finally {
+            client.disconnect();
+        }
     }
 
     @Test

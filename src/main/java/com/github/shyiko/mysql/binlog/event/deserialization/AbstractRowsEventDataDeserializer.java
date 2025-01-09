@@ -22,7 +22,7 @@ import com.github.shyiko.mysql.binlog.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.Serializable;
 import java.math.BigDecimal;
-import java.sql.Time;
+import java.time.Instant;
 import java.util.BitSet;
 import java.util.Calendar;
 import java.util.Map;
@@ -77,6 +77,7 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
     private boolean microsecondsPrecision;
     private boolean deserializeCharAndBinaryAsByteArray;
     private boolean deserializeIntegerAsByteArray;
+    private boolean deserializeWithNewTimeV2;
 
     public AbstractRowsEventDataDeserializer(Map<Long, TableMapEventData> tableMapEventByTableId) {
         this.tableMapEventByTableId = tableMapEventByTableId;
@@ -101,6 +102,10 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
 
     void setDeserializeIntegerAsByteArray(boolean deserializeIntegerAsByteArray) {
         this.deserializeIntegerAsByteArray = deserializeIntegerAsByteArray;
+    }
+
+    void setDeserializeWithNewTimeV2(boolean deserializeWithNewTimeV2) {
+        this.deserializeWithNewTimeV2 = deserializeWithNewTimeV2;
     }
 
     protected Serializable[] deserializeRow(long tableId, BitSet includedColumns, ByteArrayInputStream inputStream)
@@ -173,7 +178,11 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
             case TIME:
                 return deserializeTime(inputStream);
             case TIME_V2:
-                return deserializeTimeV2(meta, inputStream);
+                if (deserializeWithNewTimeV2) {
+                    return deserializeTimeV2New(meta, inputStream);
+                } else {
+                    return deserializeTimeV2(meta, inputStream);
+                }
             case TIMESTAMP:
                 return deserializeTimestamp(inputStream);
             case TIMESTAMP_V2:
@@ -317,6 +326,36 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return timestamp != null ? convertLongTimestamptWithFSP(timestamp, fsp) : null;
     }
 
+    protected Serializable deserializeTimeV2New(int meta, ByteArrayInputStream inputStream) throws IOException {
+        /*
+            (in big endian)
+
+            1 bit sign (1= non-negative, 0= negative)
+            1 bit unused (reserved for future extensions)
+            10 bits hour (0-838)
+            6 bits minute (0-59)
+            6 bits second (0-59)
+
+            (3 bytes in total)
+
+            + fractional-seconds storage (size depends on meta)
+        */
+        int data = bigEndianIntegerV2(inputStream.read(3), 0, 3);
+
+        int sign = (bitSlice(data, 0, 1, 24) == 1) ? 1 : -1;
+
+        if (sign == -1) {
+            data = ~data + 1;
+        }
+
+        int fsp = deserializeFractionalSecondsV2(meta, inputStream);
+        int hour = bitSlice(data, 2, 10, 24);
+        int minute = bitSlice(data, 12, 6, 24);
+        int second = bitSlice(data, 18, 6, 24);
+
+        return Instant.ofEpochSecond(sign * (hour * 3600L + minute * 60L + second), fsp * 1000L);
+    }
+
     protected Serializable deserializeTimestamp(ByteArrayInputStream inputStream) throws IOException {
         long timestamp = inputStream.readLong(4) * 1000;
         if (deserializeDateAndTimeAsLong) {
@@ -457,6 +496,15 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return 0;
     }
 
+    private int deserializeFractionalSecondsV2(int meta, ByteArrayInputStream inputStream) throws IOException {
+        int length = (meta + 1) / 2;
+        if (length > 0) {
+            int fraction = bigEndianIntegerV2(inputStream.read(length), 0, length);
+            return fraction * (int) Math.pow(100, 3 - length);
+        }
+        return 0;
+    }
+
     private static int bitSlice(long value, int bitOffset, int numberOfBits, int payloadSize) {
         long result = value >> payloadSize - (bitOffset + numberOfBits);
         return (int) (result & ((1 << numberOfBits) - 1));
@@ -517,6 +565,18 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         for (int i = offset; i < (offset + length); i++) {
             byte b = bytes[i];
             result = (result << 8) | (b >= 0 ? (int) b : (b + 256));
+        }
+        return result;
+    }
+
+    private static int bigEndianIntegerV2(byte[] bytes, int offset, int length) {
+        int result = 0;
+        for (int i = offset; i < (offset + length); i++) {
+            int b = bytes[i] & 0xFF;
+            result = result << 8 | b;
+        }
+        if (result >= 0x800000) {
+            result -= 0x1000000;
         }
         return result;
     }
