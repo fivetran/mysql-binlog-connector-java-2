@@ -31,4 +31,11 @@ public class XidEventDataDeserializer implements EventDataDeserializer<XidEventD
         eventData.setXid(inputStream.readLong(8));
         return eventData;
     }
+
+    @Override
+    public XidEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        XidEventData eventData = new XidEventData();
+        eventData.setXid(eventDataReader.readLong(8));
+        return eventData;
+    }
 }

@@ -108,6 +108,72 @@ public class GtidEventDataDeserializer implements EventDataDeserializer<GtidEven
         return new GtidEventData(gtid, flags, lastCommitted, sequenceNumber, immediateCommitTimestamp, originalCommitTimestamp, transactionLength, immediateServerVersion, originalServerVersion);
     }
 
+    @Override
+    public GtidEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        byte flags = eventDataReader.readByte();
+        long sourceIdMostSignificantBits = eventDataReader.readLongBE(8);
+        long sourceIdLeastSignificantBits = eventDataReader.readLongBE(8);
+        long transactionId = eventDataReader.readLong(8);
+
+        final MySqlGtid gtid = new MySqlGtid(
+            new UUID(sourceIdMostSignificantBits, sourceIdLeastSignificantBits),
+            transactionId
+        );
+
+        // MTR logical clock
+        long lastCommitted = 0;
+        long sequenceNumber = 0;
+        // ImmediateCommitTimestamp/OriginalCommitTimestamp are introduced in MySQL-8.0.1, see:
+        // https://dev.mysql.com/doc/relnotes/mysql/8.0/en/news-8-0-1.html
+        long immediateCommitTimestamp = 0;
+        long originalCommitTimestamp = 0;
+        // Total transaction length (including this GTIDEvent), introduced in MySQL-8.0.2, see:
+        // https://dev.mysql.com/doc/relnotes/mysql/8.0/en/news-8-0-2.html
+        long transactionLength = 0;
+        // ImmediateServerVersion/OriginalServerVersion are introduced in MySQL-8.0.14, see
+        // https://dev.mysql.com/doc/relnotes/mysql/8.0/en/news-8-0-14.html
+        int immediateServerVersion = 0;
+        int originalServerVersion = 0;
+
+        // Logical timestamps - since MySQL 5.7.6
+        if (eventDataReader.peekUnsignedByte() == LOGICAL_TIMESTAMP_TYPECODE) {
+            eventDataReader.skip(LOGICAL_TIMESTAMP_TYPECODE_LENGTH);
+            lastCommitted = eventDataReader.readLong(LOGICAL_TIMESTAMP_LENGTH);
+            sequenceNumber = eventDataReader.readLong(LOGICAL_TIMESTAMP_LENGTH);
+            // Immediate and original commit timestamps are introduced in MySQL-8.0.1
+            if (eventDataReader.available() >= IMMEDIATE_COMMIT_TIMESTAMP_LENGTH) {
+                immediateCommitTimestamp = eventDataReader.readLong(IMMEDIATE_COMMIT_TIMESTAMP_LENGTH);
+                // Check the MSB to determine how to populate the original commit timestamp
+                if ((immediateCommitTimestamp & (1L << ENCODED_COMMIT_TIMESTAMP_LENGTH)) != 0) {
+                    immediateCommitTimestamp &= ~(1L << ENCODED_COMMIT_TIMESTAMP_LENGTH);
+                    originalCommitTimestamp = eventDataReader.readLong(ORIGINAL_COMMIT_TIMESTAMP_LENGTH);
+                } else {
+                    // Transaction originated in the previous server eg. writer if direct connect
+                    originalCommitTimestamp = immediateCommitTimestamp;
+                }
+                // Total transaction length (including this GTIDEvent), introduced in MySQL-8.0.2
+                if (eventDataReader.available() >= TRANSACTION_LENGTH_MIN_LENGTH) {
+                    transactionLength = eventDataReader.readPackedLong();
+                }
+                immediateServerVersion = UNDEFINED_SERVER_VERSION;
+                originalServerVersion = UNDEFINED_SERVER_VERSION;
+                // Immediate and original server versions are introduced in MySQL-8.0.14
+                if (eventDataReader.available() >= IMMEDIATE_SERVER_VERSION_LENGTH) {
+                    immediateServerVersion = eventDataReader.readInteger(IMMEDIATE_SERVER_VERSION_LENGTH);
+                    // Check the MSB to determine how to populate original server version
+                    if ((immediateServerVersion & (1L << ENCODED_SERVER_VERSION_LENGTH)) != 0) {
+                        immediateServerVersion &= ~(1L << ENCODED_SERVER_VERSION_LENGTH);
+                        originalServerVersion = eventDataReader.readInteger(ORIGINAL_SERVER_VERSION_LENGTH);
+                    } else {
+                        originalServerVersion = immediateServerVersion;
+                    }
+                }
+            }
+        }
+
+        return new GtidEventData(gtid, flags, lastCommitted, sequenceNumber, immediateCommitTimestamp, originalCommitTimestamp, transactionLength, immediateServerVersion, originalServerVersion);
+    }
+
     private static long readLongBigEndian(ByteArrayInputStream input) throws IOException {
         long result = 0;
         for (int i = 0; i < 8; ++i) {

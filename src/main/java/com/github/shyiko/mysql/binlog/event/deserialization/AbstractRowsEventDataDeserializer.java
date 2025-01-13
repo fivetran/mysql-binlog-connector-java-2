@@ -22,6 +22,7 @@ import com.github.shyiko.mysql.binlog.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.sql.Time;
 import java.util.BitSet;
 import java.util.Calendar;
 import java.util.Map;
@@ -153,6 +154,50 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return result;
     }
 
+    protected Serializable[] deserializeRow(long tableId, BitSet includedColumns, BinaryLogEventDataReader eventDataReader)
+        throws IOException {
+        TableMapEventData tableMapEvent = tableMapEventByTableId.get(tableId);
+        if (tableMapEvent == null) {
+            throw new MissingTableMapEventException("No TableMapEventData has been found for table id:" + tableId +
+                ". Usually that means that you have started reading binary log 'within the logical event group'" +
+                " (e.g. from WRITE_ROWS and not proceeding TABLE_MAP");
+        }
+        byte[] types = tableMapEvent.getColumnTypes();
+        int[] metadata = tableMapEvent.getColumnMetadata();
+        Serializable[] result = new Serializable[numberOfBitsSet(includedColumns)];
+        BitSet nullColumns = eventDataReader.readBitSet(result.length, true);
+        for (int i = 0, numberOfSkippedColumns = 0; i < types.length; i++) {
+            if (!includedColumns.get(i)) {
+                numberOfSkippedColumns++;
+                continue;
+            }
+            int index = i - numberOfSkippedColumns;
+            if (!nullColumns.get(index)) {
+                // mysql-5.6.24 sql/log_event.cc log_event_print_value (line 1980)
+                int typeCode = types[i] & 0xFF, meta = metadata[i], length = 0;
+                if (typeCode == ColumnType.STRING.getCode()) {
+                    if (meta >= 256) {
+                        int meta0 = meta >> 8, meta1 = meta & 0xFF;
+                        if ((meta0 & 0x30) != 0x30) {
+                            typeCode = meta0 | 0x30;
+                            length = meta1 | (((meta0 & 0x30) ^ 0x30) << 4);
+                        } else {
+                            // mysql-5.6.24 sql/rpl_utility.h enum_field_types (line 278)
+                            if (meta0 == ColumnType.ENUM.getCode() || meta0 == ColumnType.SET.getCode()) {
+                                typeCode = meta0;
+                            }
+                            length = meta1;
+                        }
+                    } else {
+                        length = meta;
+                    }
+                }
+                result[index] = deserializeCell(ColumnType.byCode(typeCode), meta, length, eventDataReader);
+            }
+        }
+        return result;
+    }
+
     protected Serializable deserializeCell(ColumnType type, int meta, int length, ByteArrayInputStream inputStream)
             throws IOException {
         switch (type) {
@@ -213,9 +258,70 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         }
     }
 
+    protected Serializable deserializeCell(ColumnType type, int meta, int length, BinaryLogEventDataReader eventDataReader)
+        throws IOException {
+        switch (type) {
+            case BIT:
+                return deserializeBit(meta, eventDataReader);
+            case TINY:
+                return deserializeTiny(eventDataReader);
+            case SHORT:
+                return deserializeShort(eventDataReader);
+            case INT24:
+                return deserializeInt24(eventDataReader);
+            case LONG:
+                return deserializeLong(eventDataReader);
+            case LONGLONG:
+                return deserializeLongLong(eventDataReader);
+            case FLOAT:
+                return deserializeFloat(eventDataReader);
+            case DOUBLE:
+                return deserializeDouble(eventDataReader);
+            case NEWDECIMAL:
+                return deserializeNewDecimal(meta, eventDataReader);
+            case DATE:
+                return deserializeDate(eventDataReader);
+            case TIME:
+                return deserializeTime(eventDataReader);
+            case TIME_V2:
+                return deserializeTimeV2(meta, eventDataReader);
+            case TIMESTAMP:
+                return deserializeTimestamp(eventDataReader);
+            case TIMESTAMP_V2:
+                return deserializeTimestampV2(meta, eventDataReader);
+            case DATETIME:
+                return deserializeDatetime(eventDataReader);
+            case DATETIME_V2:
+                return deserializeDatetimeV2(meta, eventDataReader);
+            case YEAR:
+                return deserializeYear(eventDataReader);
+            case STRING: // CHAR or BINARY
+                return deserializeString(length, eventDataReader);
+            case VARCHAR: case VAR_STRING: // VARCHAR or VARBINARY
+                return deserializeVarString(meta, eventDataReader);
+            case BLOB:
+                return deserializeBlob(meta, eventDataReader);
+            case ENUM:
+                return deserializeEnum(length, eventDataReader);
+            case SET:
+                return deserializeSet(length, eventDataReader);
+            case GEOMETRY:
+                return deserializeGeometry(meta, eventDataReader);
+            case JSON:
+                return deserializeJson(meta, eventDataReader);
+            default:
+                throw new IOException("Unsupported type " + type);
+        }
+    }
+
     protected Serializable deserializeBit(int meta, ByteArrayInputStream inputStream) throws IOException {
         int bitSetLength = (meta >> 8) * 8 + (meta & 0xFF);
         return inputStream.readBitSet(bitSetLength, false);
+    }
+
+    protected Serializable deserializeBit(int meta, BinaryLogEventDataReader eventDataReader) {
+        int bitSetLength = (meta >> 8) * 8 + (meta & 0xFF);
+        return eventDataReader.readBitSet(bitSetLength, false);
     }
 
     protected Serializable deserializeTiny(ByteArrayInputStream inputStream) throws IOException {
@@ -225,11 +331,25 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return (int) ((byte) inputStream.readInteger(1));
     }
 
+    protected Serializable deserializeTiny(BinaryLogEventDataReader eventDataReader) {
+        if (deserializeIntegerAsByteArray) {
+            return eventDataReader.readBytes(1);
+        }
+        return (int)eventDataReader.readByte();
+    }
+
     protected Serializable deserializeShort(ByteArrayInputStream inputStream) throws IOException {
         if (deserializeIntegerAsByteArray) {
             return inputStream.read(2);
         }
         return (int) ((short) inputStream.readInteger(2));
+    }
+
+    protected Serializable deserializeShort(BinaryLogEventDataReader eventDataReader) {
+        if (deserializeIntegerAsByteArray) {
+            return eventDataReader.readBytes(2);
+        }
+        return (int) ((short) eventDataReader.readInteger(2));
     }
 
     protected Serializable deserializeInt24(ByteArrayInputStream inputStream) throws IOException {
@@ -239,11 +359,25 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return (inputStream.readInteger(3) << 8) >> 8;
     }
 
+    protected Serializable deserializeInt24(BinaryLogEventDataReader eventDataReader) {
+        if (deserializeIntegerAsByteArray) {
+            return eventDataReader.readBytes(3);
+        }
+        return (eventDataReader.readInteger(3) << 8) >> 8;
+    }
+
     protected Serializable deserializeLong(ByteArrayInputStream inputStream) throws IOException {
         if (deserializeIntegerAsByteArray) {
             return inputStream.read(4);
         }
         return inputStream.readInteger(4);
+    }
+
+    protected Serializable deserializeLong(BinaryLogEventDataReader eventDataReader) {
+        if (deserializeIntegerAsByteArray) {
+            return eventDataReader.readBytes(4);
+        }
+        return eventDataReader.readInteger(4);
     }
 
     protected Serializable deserializeLongLong(ByteArrayInputStream inputStream) throws IOException {
@@ -253,12 +387,27 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return inputStream.readLong(8);
     }
 
+    protected Serializable deserializeLongLong(BinaryLogEventDataReader eventDataReader) {
+        if (deserializeIntegerAsByteArray) {
+            return eventDataReader.readBytes(8);
+        }
+        return eventDataReader.readLong(8);
+    }
+
     protected Serializable deserializeFloat(ByteArrayInputStream inputStream) throws IOException {
         return Float.intBitsToFloat(inputStream.readInteger(4));
     }
 
+    protected Serializable deserializeFloat(BinaryLogEventDataReader eventDataReader) {
+        return Float.intBitsToFloat(eventDataReader.readInteger(4));
+    }
+
     protected Serializable deserializeDouble(ByteArrayInputStream inputStream) throws IOException {
         return Double.longBitsToDouble(inputStream.readLong(8));
+    }
+
+    protected Serializable deserializeDouble(BinaryLogEventDataReader eventDataReader) {
+        return Double.longBitsToDouble(eventDataReader.readLong(8));
     }
 
     protected Serializable deserializeNewDecimal(int meta, ByteArrayInputStream inputStream) throws IOException {
@@ -267,6 +416,14 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         int decimalLength = (ipd << 2) + DIG_TO_BYTES[x - ipd * DIG_PER_DEC] +
             (fpd << 2) + DIG_TO_BYTES[scale - fpd * DIG_PER_DEC];
         return asBigDecimal(precision, scale, inputStream.read(decimalLength));
+    }
+
+    protected Serializable deserializeNewDecimal(int meta, BinaryLogEventDataReader eventDataReader) {
+        int precision = meta & 0xFF, scale = meta >> 8, x = precision - scale;
+        int ipd = x / DIG_PER_DEC, fpd = scale / DIG_PER_DEC;
+        int decimalLength = (ipd << 2) + DIG_TO_BYTES[x - ipd * DIG_PER_DEC] +
+            (fpd << 2) + DIG_TO_BYTES[scale - fpd * DIG_PER_DEC];
+        return asBigDecimal(precision, scale, eventDataReader.readBytes(decimalLength));
     }
 
     private Long castTimestamp(Long timestamp, int fsp) {
@@ -278,6 +435,15 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
 
     protected Serializable deserializeDate(ByteArrayInputStream inputStream) throws IOException {
         int value = inputStream.readInteger(3);
+        return deserializeDateInteger(value);
+    }
+
+    protected Serializable deserializeDate(BinaryLogEventDataReader eventDataReader) {
+        int value = eventDataReader.readInteger(3);
+        return deserializeDateInteger(value);
+    }
+
+    private Serializable deserializeDateInteger(int value) {
         int day = value % 32;
         value >>>= 5;
         int month = value % 16;
@@ -291,6 +457,15 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
 
     protected Serializable deserializeTime(ByteArrayInputStream inputStream) throws IOException {
         int value = inputStream.readInteger(3);
+        return deserializeTimeInteger(value);
+    }
+
+    protected Serializable deserializeTime(BinaryLogEventDataReader eventDataReader) {
+        int value = eventDataReader.readInteger(3);
+        return deserializeTimeInteger(value);
+    }
+
+    private Serializable deserializeTimeInteger(int value) {
         int[] split = split(value, 100, 3);
         Long timestamp = asUnixTime(1970, 1, 1, split[2], split[1], split[0], 0);
         if (deserializeDateAndTimeAsLong) {
@@ -315,6 +490,34 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         */
         long time = bigEndianLong(inputStream.read(3), 0, 3);
         int fsp = deserializeFractionalSeconds(meta, inputStream);
+        Long timestamp = asUnixTime(1970, 1, 1,
+            bitSlice(time, 2, 10, 24),
+            bitSlice(time, 12, 6, 24),
+            bitSlice(time, 18, 6, 24),
+            fsp / 1000
+        );
+        if (deserializeDateAndTimeAsLong) {
+            return castTimestamp(timestamp, fsp);
+        }
+        return timestamp != null ? convertLongTimestamptWithFSP(timestamp, fsp) : null;
+    }
+
+    protected Serializable deserializeTimeV2(int meta, BinaryLogEventDataReader eventDataReader) {
+        /*
+            (in big endian)
+
+            1 bit sign (1= non-negative, 0= negative)
+            1 bit unused (reserved for future extensions)
+            10 bits hour (0-838)
+            6 bits minute (0-59)
+            6 bits second (0-59)
+
+            (3 bytes in total)
+
+            + fractional-seconds storage (size depends on meta)
+        */
+        long time = eventDataReader.readLongBE(3);
+        int fsp = deserializeFractionalSeconds(meta, eventDataReader);
         Long timestamp = asUnixTime(1970, 1, 1,
             bitSlice(time, 2, 10, 24),
             bitSlice(time, 12, 6, 24),
@@ -392,6 +595,14 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return new java.sql.Timestamp(timestamp);
     }
 
+    protected Serializable deserializeTimestamp(BinaryLogEventDataReader eventDataReader) {
+        long timestamp = eventDataReader.readLong(4) * 1000;
+        if (deserializeDateAndTimeAsLong) {
+            return castTimestamp(timestamp, 0);
+        }
+        return new java.sql.Timestamp(timestamp);
+    }
+
     protected Serializable deserializeTimestampV2(int meta, ByteArrayInputStream inputStream) throws IOException {
         long millis = bigEndianLong(inputStream.read(4), 0, 4);
         int fsp = deserializeFractionalSeconds(meta, inputStream);
@@ -402,8 +613,27 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return convertLongTimestamptWithFSP(timestamp, fsp);
     }
 
+    protected Serializable deserializeTimestampV2(int meta, BinaryLogEventDataReader eventDataReader) {
+        long millis = eventDataReader.readLongBE(4);
+        int fsp = deserializeFractionalSeconds(meta, eventDataReader);
+        long timestamp = millis * 1000 + fsp / 1000;
+        if (deserializeDateAndTimeAsLong) {
+            return castTimestamp(timestamp, fsp);
+        }
+        return convertLongTimestamptWithFSP(timestamp, fsp);
+    }
+
     protected Serializable deserializeDatetime(ByteArrayInputStream inputStream) throws IOException {
         int[] split = split(inputStream.readLong(8), 100, 6);
+        Long timestamp = asUnixTime(split[5], split[4], split[3], split[2], split[1], split[0], 0);
+        if (deserializeDateAndTimeAsLong) {
+            return castTimestamp(timestamp, 0);
+        }
+        return timestamp != null ? new java.sql.Timestamp(timestamp) : null;
+    }
+
+    protected Serializable deserializeDatetime(BinaryLogEventDataReader eventDataReader) {
+        int[] split = split(eventDataReader.readLong(8), 100, 6);
         Long timestamp = asUnixTime(split[5], split[4], split[3], split[2], split[1], split[0], 0);
         if (deserializeDateAndTimeAsLong) {
             return castTimestamp(timestamp, 0);
@@ -445,6 +675,42 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return timestamp != null ? convertLongTimestamptWithFSP(timestamp, fsp) : null;
     }
 
+    protected Serializable deserializeDatetimeV2(int meta, BinaryLogEventDataReader eventDataReader) {
+        /*
+            (in big endian)
+
+            1 bit sign (1= non-negative, 0= negative)
+            17 bits year*13+month (year 0-9999, month 0-12)
+            5 bits day (0-31)
+            5 bits hour (0-23)
+            6 bits minute (0-59)
+            6 bits second (0-59)
+
+            (5 bytes in total)
+
+            + fractional-seconds storage (size depends on meta)
+        */
+        long datetime = eventDataReader.readLongBE(5);
+
+        int yearMonth = bitSlice(datetime, 1, 17, 40);
+        int time = bitSlice(datetime, 18, 22, 40);
+        int fsp = deserializeFractionalSeconds(meta, eventDataReader);
+        Long timestamp = asUnixTime(
+            yearMonth / 13,
+            yearMonth % 13,
+            time >> 17,
+            (time >> 12) % (1 << 5),
+            (time >> 6) % (1 << 6),
+            time % (1 << 6),
+            fsp / 1000
+        );
+        if (deserializeDateAndTimeAsLong) {
+            return castTimestamp(timestamp, fsp);
+        }
+
+        return timestamp != null ? convertLongTimestamptWithFSP(timestamp, fsp) : null;
+    }
+
     private java.sql.Timestamp convertLongTimestamptWithFSP(Long timestamp, int fsp) {
         java.sql.Timestamp ts = new java.sql.Timestamp(timestamp);
         ts.setNanos(fsp * 1000);
@@ -453,6 +719,11 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
 
     protected Serializable deserializeYear(ByteArrayInputStream inputStream) throws IOException {
         int year = inputStream.readInteger(1);
+        return year == 0 ? 0 : 1900 + year;
+    }
+
+    protected Serializable deserializeYear(BinaryLogEventDataReader eventDataReader) {
+        int year = eventDataReader.readUnsignedByte();
         return year == 0 ? 0 : 1900 + year;
     }
 
@@ -466,6 +737,16 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return inputStream.readString(stringLength);
     }
 
+    protected Serializable deserializeString(int length, BinaryLogEventDataReader eventDataReader) {
+        // charset is not present in the binary log (meaning there is no way to distinguish between CHAR / BINARY)
+        // as a result - return byte[] instead of an actual String
+        int stringLength = length < 256 ? eventDataReader.readUnsignedByte() : eventDataReader.readInteger(2);
+        if (deserializeCharAndBinaryAsByteArray) {
+            return eventDataReader.readBytes(stringLength);
+        }
+        return eventDataReader.readString(stringLength);
+    }
+
     protected Serializable deserializeVarString(int meta, ByteArrayInputStream inputStream) throws IOException {
         int varcharLength = meta < 256 ? inputStream.readInteger(1) : inputStream.readInteger(2);
         if (deserializeCharAndBinaryAsByteArray) {
@@ -474,22 +755,48 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return inputStream.readString(varcharLength);
     }
 
+    protected Serializable deserializeVarString(int meta, BinaryLogEventDataReader eventDataReader) {
+        int varcharLength = meta < 256 ? eventDataReader.readUnsignedByte() : eventDataReader.readInteger(2);
+        if (deserializeCharAndBinaryAsByteArray) {
+            return eventDataReader.readBytes(varcharLength);
+        }
+        return eventDataReader.readString(varcharLength);
+    }
+
     protected Serializable deserializeBlob(int meta, ByteArrayInputStream inputStream) throws IOException {
         int blobLength = inputStream.readInteger(meta);
         return inputStream.read(blobLength);
+    }
+
+    protected Serializable deserializeBlob(int meta, BinaryLogEventDataReader eventDataReader) {
+        int blobLength = eventDataReader.readInteger(meta);
+        return eventDataReader.readBytes(blobLength);
     }
 
     protected Serializable deserializeEnum(int length, ByteArrayInputStream inputStream) throws IOException {
         return inputStream.readInteger(length);
     }
 
+    protected Serializable deserializeEnum(int length, BinaryLogEventDataReader eventDataReader) {
+        return eventDataReader.readInteger(length);
+    }
+
     protected Serializable deserializeSet(int length, ByteArrayInputStream inputStream) throws IOException {
         return inputStream.readLong(length);
+    }
+
+    protected Serializable deserializeSet(int length, BinaryLogEventDataReader eventDataReader) {
+        return eventDataReader.readLong(length);
     }
 
     protected Serializable deserializeGeometry(int meta, ByteArrayInputStream inputStream) throws IOException {
         int dataLength = inputStream.readInteger(meta);
         return inputStream.read(dataLength);
+    }
+
+    protected Serializable deserializeGeometry(int meta, BinaryLogEventDataReader eventDataReader) {
+        int dataLength = eventDataReader.readInteger(meta);
+        return eventDataReader.readBytes(dataLength);
     }
 
     /**
@@ -507,6 +814,11 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         return inputStream.read(blobLength);
     }
 
+    protected byte[] deserializeJson(int meta, BinaryLogEventDataReader eventDataReader) {
+        int blobLength = eventDataReader.readInteger(meta);
+        return eventDataReader.readBytes(blobLength);
+    }
+
     protected Long asUnixTime(int year, int month, int day, int hour, int minute, int second, int millis) {
         // https://dev.mysql.com/doc/refman/5.0/en/datetime.html
         if (year == 0 || month == 0 || day == 0) {
@@ -519,6 +831,15 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
         int length = (meta + 1) / 2;
         if (length > 0) {
             int fraction = bigEndianInteger(inputStream.read(length), 0, length);
+            return fraction * (int) Math.pow(100, 3 - length);
+        }
+        return 0;
+    }
+
+    protected int deserializeFractionalSeconds(int meta, BinaryLogEventDataReader eventDataReader) {
+        int length = (meta + 1) / 2;
+        if (length > 0) {
+            int fraction = eventDataReader.readIntegerBE(length);
             return fraction * (int) Math.pow(100, 3 - length);
         }
         return 0;
