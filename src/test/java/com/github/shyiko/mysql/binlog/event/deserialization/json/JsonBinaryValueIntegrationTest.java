@@ -15,14 +15,7 @@
  */
 package com.github.shyiko.mysql.binlog.event.deserialization.json;
 
-import com.github.shyiko.mysql.binlog.BinaryLogClient;
-import com.github.shyiko.mysql.binlog.BinaryLogClientIntegrationTest;
-import com.github.shyiko.mysql.binlog.CapturingEventListener;
-import com.github.shyiko.mysql.binlog.CountDownEventListener;
-import com.github.shyiko.mysql.binlog.MySQLConnection;
-import com.github.shyiko.mysql.binlog.MysqlOnetimeServer;
-import com.github.shyiko.mysql.binlog.TraceEventListener;
-import com.github.shyiko.mysql.binlog.TraceLifecycleListener;
+import com.github.shyiko.mysql.binlog.*;
 import com.github.shyiko.mysql.binlog.event.EventData;
 import com.github.shyiko.mysql.binlog.event.EventType;
 import com.github.shyiko.mysql.binlog.event.QueryEventData;
@@ -584,7 +577,7 @@ public class JsonBinaryValueIntegrationTest {
     public void afterEachTest() throws Exception {
         final CountDownLatch latch = new CountDownLatch(1);
         final String markerQuery = "drop table if exists _EOS_marker";
-        BinaryLogClient.EventListener markerInterceptor = event -> {
+        EventListener markerInterceptor = event -> {
             if (event.getHeader().getEventType() == EventType.QUERY) {
                 EventData data = event.getData();
                 if (data != null) {

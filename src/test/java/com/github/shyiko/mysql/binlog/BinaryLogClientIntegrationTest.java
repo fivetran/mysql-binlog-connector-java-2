@@ -493,7 +493,7 @@ public class BinaryLogClientIntegrationTest extends AbstractIntegrationTest {
     @Test
     public void testBinlogPositionPointsToTableMapEventUntilTheEndOfLogicalGroup() throws Exception {
         final AtomicReference<Map.Entry<String, Long>> markHolder = new AtomicReference<Map.Entry<String, Long>>();
-        BinaryLogClient.EventListener markEventListener = new BinaryLogClient.EventListener() {
+        EventListener markEventListener = new EventListener() {
 
             private int counter;
 
@@ -1077,7 +1077,7 @@ public class BinaryLogClientIntegrationTest extends AbstractIntegrationTest {
     public void afterEachTest() throws Exception {
         final CountDownLatch latch = new CountDownLatch(1);
         final String markerQuery = "drop table if exists _EOS_marker";
-        BinaryLogClient.EventListener markerInterceptor = new BinaryLogClient.EventListener() {
+        EventListener markerInterceptor = new EventListener() {
             public void onEvent(Event event) {
                 if (event.getHeader().getEventType() == EventType.QUERY) {
                     EventData data = event.getData();
