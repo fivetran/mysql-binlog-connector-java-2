@@ -67,17 +67,17 @@ public enum ColumnType {
         return code;
     }
 
-    private static final Map<Integer, ColumnType> INDEX_BY_CODE;
+    private static final ColumnType[] INDEX_BY_CODE;
 
     static {
-        INDEX_BY_CODE = new HashMap<Integer, ColumnType>();
+        INDEX_BY_CODE = new ColumnType[ColumnType.GEOMETRY.code];
         for (ColumnType columnType : values()) {
-            INDEX_BY_CODE.put(columnType.code, columnType);
+            INDEX_BY_CODE[columnType.code] = columnType;
         }
     }
 
     public static ColumnType byCode(int code) {
-        return INDEX_BY_CODE.get(code);
+        return INDEX_BY_CODE[code];
     }
 
 }

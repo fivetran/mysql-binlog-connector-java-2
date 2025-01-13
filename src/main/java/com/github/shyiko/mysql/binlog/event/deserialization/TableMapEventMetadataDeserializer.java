@@ -402,17 +402,17 @@ public class TableMapEventMetadataDeserializer {
 
         public int getCode() {return code;}
 
-        private static final Map<Integer, MetadataFieldType> INDEX_BY_CODE;
+        private static final MetadataFieldType[] INDEX_BY_CODE;
 
         static {
-            INDEX_BY_CODE = new HashMap<Integer, MetadataFieldType>();
+            INDEX_BY_CODE = new MetadataFieldType[MetadataFieldType.UNKNOWN_METADATA_FIELD_TYPE.code];
             for (MetadataFieldType fieldType : values()) {
-                INDEX_BY_CODE.put(fieldType.code, fieldType);
+                INDEX_BY_CODE[fieldType.code] = fieldType;
             }
         }
 
         public static MetadataFieldType byCode(int code) {
-            return INDEX_BY_CODE.get(code);
+            return INDEX_BY_CODE[code];
         }
     }
 }
