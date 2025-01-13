@@ -144,7 +144,7 @@ public class BinaryLogClientGTIDIntegrationTest extends BinaryLogClientIntegrati
 
             clientWithKeepAlive.setGtidSet(initialGTIDSet);
 
-            clientWithKeepAlive.registerEventListener(new BinaryLogClient.EventListener() {
+            clientWithKeepAlive.registerEventListener(new EventListener() {
                 @Override
                 public void onEvent(Event event) {
                     if (event.getHeader().getEventType() == EventType.GTID) {
