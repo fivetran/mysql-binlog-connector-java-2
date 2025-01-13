@@ -32,4 +32,12 @@ public class IntVarEventDataDeserializer implements EventDataDeserializer<IntVar
         event.setValue(inputStream.readLong(8));
         return event;
     }
+
+    @Override
+    public IntVarEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        IntVarEventData event = new IntVarEventData();
+        event.setType(eventDataReader.readUnsignedByte());
+        event.setValue(eventDataReader.readLong(8));
+        return event;
+    }
 }

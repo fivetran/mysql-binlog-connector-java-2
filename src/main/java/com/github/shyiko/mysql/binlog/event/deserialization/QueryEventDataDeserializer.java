@@ -37,4 +37,21 @@ public class QueryEventDataDeserializer implements EventDataDeserializer<QueryEv
         eventData.setSql(inputStream.readString(inputStream.available()));
         return eventData;
     }
+
+    @Override
+    public QueryEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        QueryEventData eventData = new QueryEventData();
+        eventData.setThreadId(eventDataReader.readLong(4));
+        eventData.setExecutionTime(eventDataReader.readLong(4));
+
+        int dbNameLength = eventDataReader.readUnsignedByte();
+        eventData.setErrorCode(eventDataReader.readInteger(2));
+
+        int statusVarLength = eventDataReader.readInteger(2);
+        eventDataReader.skip(statusVarLength);
+
+        eventData.setDatabase(eventDataReader.readZeroTerminatedStringWithHint(dbNameLength));
+        eventData.setSql(eventDataReader.readString(eventDataReader.available()));
+        return eventData;
+    }
 }

@@ -24,4 +24,12 @@ public class AnnotateRowsEventDataDeserializerTest {
 
         assertEquals(sql, eventData.getRowsQuery());
     }
+
+    @Test
+    public void deserializeReader() throws IOException {
+        AnnotateRowsEventDataDeserializer deserializer = new AnnotateRowsEventDataDeserializer();
+        AnnotateRowsEventData eventData = deserializer.deserialize(new BinaryLogEventDataReader(DATA));
+
+        assertEquals(sql, eventData.getRowsQuery());
+    }
 }

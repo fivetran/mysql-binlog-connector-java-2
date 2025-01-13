@@ -48,6 +48,26 @@ public class PreviousGtidSetDeserializer implements EventDataDeserializer<Previo
         return new PreviousGtidSetEventData(join(gtids, ","));
     }
 
+    @Override
+    public PreviousGtidSetEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        int nUuids = eventDataReader.readInteger(8);
+        String[] gtids = new String[nUuids];
+        for (int i = 0; i < nUuids; i++) {
+            String uuid = formatUUID(eventDataReader.readBytes(16));
+
+            int nIntervals = eventDataReader.readInteger(8);
+            String[] intervals = new String[nIntervals];
+            for (int j = 0; j < nIntervals; j++) {
+                long start = eventDataReader.readLong(8);
+                long end = eventDataReader.readLong(8);
+                intervals[j] = start + "-" + (end - 1);
+            }
+
+            gtids[i] = format("%s:%s", uuid, join(intervals, ":"));
+        }
+        return new PreviousGtidSetEventData(join(gtids, ","));
+    }
+
     private String formatUUID(byte[] bytes) {
         return format("%s-%s-%s-%s-%s",
             byteArrayToHex(bytes, 0, 4),
@@ -58,7 +78,7 @@ public class PreviousGtidSetDeserializer implements EventDataDeserializer<Previo
     }
 
     private static String byteArrayToHex(byte[] a, int offset, int len) {
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(len * 2);
         for (int idx = offset; idx < (offset + len) && idx < a.length; idx++) {
             sb.append(format("%02x", a[idx] & 0xff));
         }

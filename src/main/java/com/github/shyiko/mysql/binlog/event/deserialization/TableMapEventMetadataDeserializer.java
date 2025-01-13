@@ -144,6 +144,114 @@ public class TableMapEventMetadataDeserializer {
         return result;
     }
 
+    public TableMapEventMetadata deserialize(BinaryLogEventDataReader eventDataReader, int nColumns, byte[] columnTypes)
+        throws IOException {
+
+        int remainingBytes = eventDataReader.available();
+        if (remainingBytes == 0) {
+            return null;
+        }
+
+        TableMapEventMetadata result = new TableMapEventMetadata();
+
+        for (; remainingBytes > 0; eventDataReader.enterBlock(remainingBytes)) {
+            int code = eventDataReader.readUnsignedByte();
+
+            MetadataFieldType fieldType = MetadataFieldType.byCode(code);
+            if (fieldType == null) {
+                throw new IOException("Unsupported table metadata field type " + code);
+            }
+            if (MetadataFieldType.UNKNOWN_METADATA_FIELD_TYPE.equals(fieldType)) {
+                if (logger.isLoggable(Level.FINE)) {
+                    logger.fine("Received metadata field of unknown type");
+                }
+                continue;
+            }
+
+            // for some reasons, the UNKNOWN_METADATA_FIELD_TYPE will mess up the stream
+            if (eventDataReader.available() == 0) {
+                logger.warning("Buffer is empty so cannot read field length for field type: " + fieldType);
+                return result;
+            }
+
+            int fieldLength = eventDataReader.readPackedInteger();
+
+            remainingBytes = eventDataReader.available();
+            eventDataReader.enterBlock(fieldLength);
+
+            switch (fieldType) {
+                case SIGNEDNESS:
+                    int numericColumns = 0;
+                    BitSet bitSet = new BitSet(columnTypes.length);
+                    for (int i = 0; i < columnTypes.length; i++) {
+                        switch (ColumnType.byCode(columnTypes[i] & 0xff)) {
+                            case TINY:
+                            case SHORT:
+                            case INT24:
+                            case LONG:
+                            case LONGLONG:
+                            case NEWDECIMAL:
+                            case FLOAT:
+                            case DOUBLE:
+                            case YEAR:
+                                numericColumns++;
+                                bitSet.set(i);
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                    BitSet signednessBitSet = readBooleanList(eventDataReader, numericColumns);
+
+                    for (int i = 0, j = 0; i < columnTypes.length; i++) {
+                        if (bitSet.get(i)) {
+                            bitSet.set(i, signednessBitSet.get(j++)); // set signed-ness
+                        }
+                    }
+                    result.setSignedness(bitSet);
+                    break;
+                case DEFAULT_CHARSET:
+                    result.setDefaultCharset(readDefaultCharset(eventDataReader));
+                    break;
+                case COLUMN_CHARSET:
+                    result.setColumnCharsets(readIntegers(eventDataReader));
+                    break;
+                case COLUMN_NAME:
+                    result.setColumnNames(readColumnNames(eventDataReader));
+                    break;
+                case SET_STR_VALUE:
+                    result.setSetStrValues(readTypeValues(eventDataReader));
+                    break;
+                case ENUM_STR_VALUE:
+                    result.setEnumStrValues(readTypeValues(eventDataReader));
+                    break;
+                case GEOMETRY_TYPE:
+                    result.setGeometryTypes(readIntegers(eventDataReader));
+                    break;
+                case SIMPLE_PRIMARY_KEY:
+                    result.setSimplePrimaryKeys(readIntegers(eventDataReader));
+                    break;
+                case PRIMARY_KEY_WITH_PREFIX:
+                    result.setPrimaryKeysWithPrefix(readIntegerPairs(eventDataReader));
+                    break;
+                case ENUM_AND_SET_DEFAULT_CHARSET:
+                    result.setEnumAndSetDefaultCharset(readDefaultCharset(eventDataReader));
+                    break;
+                case ENUM_AND_SET_COLUMN_CHARSET:
+                    result.setEnumAndSetColumnCharsets(readIntegers(eventDataReader));
+                    break;
+                case VISIBILITY:
+                    result.setVisibility(readBooleanList(eventDataReader, nColumns));
+                    break;
+                default:
+                    eventDataReader.enterBlock(remainingBytes);
+                    throw new IOException("Unsupported table metadata field type " + code);
+            }
+            remainingBytes -= fieldLength;
+        }
+        return result;
+    }
+
 
     private static BitSet readBooleanList(ByteArrayInputStream inputStream, int length) throws IOException {
         BitSet result = new BitSet();
@@ -157,10 +265,35 @@ public class TableMapEventMetadataDeserializer {
         return result;
     }
 
+    private static BitSet readBooleanList(BinaryLogEventDataReader eventDataReader, int length) {
+        byte[] bytes = eventDataReader.readBytes((length + 7) >> 3);
+
+        // Bit reversion is taken from Hacker's Delight 2nd Edition 7-1.
+        for (int i = 0; i < bytes.length; ++i) {
+            byte b = bytes[i];
+            b = (byte)(((b & 0x55) << 1) | ((b >>> 1) & 0x55));
+            b = (byte)(((b & 0x33) << 2) | ((b >>> 2) & 0x33));
+            b = (byte)(((b & 0x0f) << 4) | ((b >>> 4) & 0x0f));
+            bytes[i] = b;
+        }
+
+        return BitSet.valueOf(bytes);
+    }
+
     private static DefaultCharset readDefaultCharset(ByteArrayInputStream inputStream) throws IOException {
         TableMapEventMetadata.DefaultCharset result = new TableMapEventMetadata.DefaultCharset();
         result.setDefaultCharsetCollation(inputStream.readPackedInteger());
         Map<Integer, Integer> charsetCollations = readIntegerPairs(inputStream);
+        if (!charsetCollations.isEmpty()) {
+            result.setCharsetCollations(charsetCollations);
+        }
+        return result;
+    }
+
+    private static DefaultCharset readDefaultCharset(BinaryLogEventDataReader eventDataReader) throws IOException {
+        TableMapEventMetadata.DefaultCharset result = new TableMapEventMetadata.DefaultCharset();
+        result.setDefaultCharsetCollation(eventDataReader.readPackedInteger());
+        Map<Integer, Integer> charsetCollations = readIntegerPairs(eventDataReader);
         if (!charsetCollations.isEmpty()) {
             result.setCharsetCollations(charsetCollations);
         }
@@ -175,10 +308,26 @@ public class TableMapEventMetadataDeserializer {
         return result;
     }
 
+    private static List<Integer> readIntegers(BinaryLogEventDataReader eventDataReader) {
+        List<Integer> result = new ArrayList<>();
+        while (eventDataReader.available() > 0) {
+            result.add(eventDataReader.readPackedInteger());
+        }
+        return result;
+    }
+
     private static List<String> readColumnNames(ByteArrayInputStream inputStream) throws IOException {
         List<String> columnNames = new ArrayList<String>();
         while (inputStream.available() > 0) {
             columnNames.add(inputStream.readLengthEncodedString());
+        }
+        return columnNames;
+    }
+
+    private static List<String> readColumnNames(BinaryLogEventDataReader eventDataReader) {
+        List<String> columnNames = new ArrayList<>();
+        while (eventDataReader.available() > 0) {
+            columnNames.add(eventDataReader.readLengthEncodedString());
         }
         return columnNames;
     }
@@ -196,11 +345,34 @@ public class TableMapEventMetadataDeserializer {
         return result;
     }
 
+    private static List<String[]> readTypeValues(BinaryLogEventDataReader eventDataReader) {
+        List<String[]> result = new ArrayList<>();
+        while (eventDataReader.available() > 0) {
+            int valuesCount = eventDataReader.readPackedInteger();
+            String[] typeValues = new String[valuesCount];
+            for (int i = 0; i < valuesCount; ++i) {
+                typeValues[i] = eventDataReader.readLengthEncodedString();
+            }
+            result.add(typeValues);
+        }
+        return result;
+    }
+
     private static Map<Integer, Integer> readIntegerPairs(ByteArrayInputStream inputStream) throws IOException {
         Map<Integer, Integer> result = new LinkedHashMap<Integer, Integer>();
         while (inputStream.available() > 0) {
             int columnIndex = inputStream.readPackedInteger();
             int columnCharset = inputStream.readPackedInteger();
+            result.put(columnIndex, columnCharset);
+        }
+        return result;
+    }
+
+    private static Map<Integer, Integer> readIntegerPairs(BinaryLogEventDataReader eventDataReader) throws IOException {
+        Map<Integer, Integer> result = new LinkedHashMap<>();
+        while (eventDataReader.available() > 0) {
+            int columnIndex = eventDataReader.readPackedInteger();
+            int columnCharset = eventDataReader.readPackedInteger();
             result.put(columnIndex, columnCharset);
         }
         return result;

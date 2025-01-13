@@ -20,6 +20,7 @@ import com.github.shyiko.mysql.binlog.io.ByteArrayInputStream;
 import org.testng.annotations.Test;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 import static org.testng.Assert.assertEquals;
 
@@ -40,6 +41,18 @@ public class XAPrepareEventDataDeserializerTest {
         XAPrepareEventDataDeserializer deserializer = new XAPrepareEventDataDeserializer();
         XAPrepareEventData xaPrepareEventData =
             deserializer.deserialize(new ByteArrayInputStream(DATA));
+
+        assertEquals(ONEPHASE, xaPrepareEventData.isOnePhase());
+        assertEquals(FORMATID, xaPrepareEventData.getFormatID());
+        assertEquals(GTRID, xaPrepareEventData.getGtrid());
+        assertEquals(BQUAL, xaPrepareEventData.getBqual());
+    }
+
+    @Test
+    public void deserializeReader() throws IOException {
+        XAPrepareEventDataDeserializer deserializer = new XAPrepareEventDataDeserializer();
+        XAPrepareEventData xaPrepareEventData =
+            deserializer.deserialize(new BinaryLogEventDataReader(DATA));
 
         assertEquals(ONEPHASE, xaPrepareEventData.isOnePhase());
         assertEquals(FORMATID, xaPrepareEventData.getFormatID());

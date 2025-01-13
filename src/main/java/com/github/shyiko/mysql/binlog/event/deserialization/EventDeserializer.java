@@ -27,7 +27,6 @@ import com.github.shyiko.mysql.binlog.io.ByteArrayInputStream;
 
 import java.io.IOException;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
@@ -248,6 +247,31 @@ public class EventDeserializer {
         return new Event(eventHeader, eventData);
     }
 
+    /**
+     * @return deserialized event
+     * @param eventDataReader event data reader to read the data from
+     * @throws IOException in case of IO error
+     */
+    public Event deserializeEvent(BinaryLogEventDataReader eventDataReader) throws IOException {
+        EventHeader eventHeader = eventHeaderDeserializer.deserialize(eventDataReader);
+        EventData eventData;
+        switch (eventHeader.getEventType()) {
+            case FORMAT_DESCRIPTION:
+                eventData = deserializeFormatDescriptionEventData(eventDataReader, eventHeader);
+                break;
+            case TABLE_MAP:
+                eventData = deserializeTableMapEventData(eventDataReader, eventHeader);
+                break;
+            case TRANSACTION_PAYLOAD:
+                eventData = deserializeTransactionPayloadEventData(eventDataReader, eventHeader);
+                break;
+            default:
+                EventDataDeserializer eventDataDeserializer = getEventDataDeserializer(eventHeader.getEventType());
+                eventData = deserializeEventData(eventDataReader, eventHeader, eventDataDeserializer);
+        }
+        return new Event(eventHeader, eventData);
+    }
+
     private EventData deserializeFormatDescriptionEventData(ByteArrayInputStream inputStream, EventHeader eventHeader)
             throws EventDataDeserializationException {
         EventDataDeserializer eventDataDeserializer =
@@ -286,12 +310,65 @@ public class EventDeserializer {
         return eventData;
     }
 
+    private EventData deserializeFormatDescriptionEventData(BinaryLogEventDataReader eventDataReader, EventHeader eventHeader)
+        throws EventDataDeserializationException {
+        EventDataDeserializer eventDataDeserializer =
+            formatDescEventDataDeserializer != null ?
+                formatDescEventDataDeserializer :
+                getEventDataDeserializer(EventType.FORMAT_DESCRIPTION);
+        int eventBodyLength = (int) eventHeader.getDataLength();
+        EventData eventData;
+        try {
+            eventDataReader.enterBlock(eventBodyLength);
+            try {
+                eventData = eventDataDeserializer.deserialize(eventDataReader);
+                // https://dev.mysql.com/worklog/task/?id=2540#tabs-2540-4
+                // +-----------+------------+-----------+------------------------+----------+
+                // | Header    | Payload (dataLength)   | Checksum Type (1 byte) | Checksum |
+                // +-----------+------------+-----------+------------------------+----------+
+                //             |                    (eventBodyLength)                       |
+                //             +------------------------------------------------------------+
+                FormatDescriptionEventData formatDescriptionEvent;
+                if (eventData instanceof EventDataWrapper) {
+                    EventDataWrapper eventDataWrapper = (EventDataWrapper) eventData;
+                    formatDescriptionEvent = (FormatDescriptionEventData) eventDataWrapper.getInternal();
+                    if (formatDescEventDataDeserializer != null) {
+                        eventData = eventDataWrapper.getExternal();
+                    }
+                } else {
+                    formatDescriptionEvent = (FormatDescriptionEventData) eventData;
+                }
+                checksumLength = formatDescriptionEvent.getChecksumType().getLength();
+            } finally {
+                eventDataReader.skipToTheEndOfTheBlock();
+            }
+        } catch (IOException e) {
+            throw new EventDataDeserializationException(eventHeader, e);
+        }
+        return eventData;
+    }
+
     public EventData deserializeTransactionPayloadEventData(ByteArrayInputStream inputStream, EventHeader eventHeader)
         throws IOException {
         EventDataDeserializer eventDataDeserializer = eventDataDeserializers.get(EventType.TRANSACTION_PAYLOAD);
         EventData eventData = deserializeEventData(inputStream, eventHeader, eventDataDeserializer);
         TransactionPayloadEventData transactionPayloadEventData = (TransactionPayloadEventData) eventData;
 
+        handleTransactionPayloadEventData(transactionPayloadEventData);
+        return eventData;
+    }
+
+    public EventData deserializeTransactionPayloadEventData(BinaryLogEventDataReader eventDataReader, EventHeader eventHeader)
+        throws IOException {
+        EventDataDeserializer eventDataDeserializer = eventDataDeserializers.get(EventType.TRANSACTION_PAYLOAD);
+        EventData eventData = deserializeEventData(eventDataReader, eventHeader, eventDataDeserializer);
+        TransactionPayloadEventData transactionPayloadEventData = (TransactionPayloadEventData) eventData;
+
+        handleTransactionPayloadEventData(transactionPayloadEventData);
+        return eventData;
+    }
+
+    private void handleTransactionPayloadEventData(TransactionPayloadEventData transactionPayloadEventData) {
         /**
          * Handling for TABLE_MAP events withing the transaction payload event. This is to ensure that for the table map
          * events within the transaction payload, the target table id and the event gets added to the
@@ -299,11 +376,10 @@ public class EventDeserializer {
          */
         for (Event event : transactionPayloadEventData.getUncompressedEvents()) {
             if (event.getHeader().getEventType() == EventType.TABLE_MAP && event.getData() != null) {
-                TableMapEventData tableMapEvent = (TableMapEventData) event.getData();
+                TableMapEventData tableMapEvent = event.getData();
                 tableMapEventByTableId.put(tableMapEvent.getTableId(), tableMapEvent);
             }
         }
-        return eventData;
     }
 
     public EventData deserializeTableMapEventData(ByteArrayInputStream inputStream, EventHeader eventHeader)
@@ -313,6 +389,20 @@ public class EventDeserializer {
                 tableMapEventDataDeserializer :
                 getEventDataDeserializer(EventType.TABLE_MAP);
         EventData eventData = deserializeEventData(inputStream, eventHeader, eventDataDeserializer);
+        return processTableMapEventData(eventData);
+    }
+
+    public EventData deserializeTableMapEventData(BinaryLogEventDataReader eventDataReader, EventHeader eventHeader)
+        throws IOException {
+        EventDataDeserializer eventDataDeserializer =
+            tableMapEventDataDeserializer != null ?
+                tableMapEventDataDeserializer :
+                getEventDataDeserializer(EventType.TABLE_MAP);
+        EventData eventData = deserializeEventData(eventDataReader, eventHeader, eventDataDeserializer);
+        return processTableMapEventData(eventData);
+    }
+
+    private EventData processTableMapEventData(EventData eventData) {
         TableMapEventData tableMapEvent;
         if (eventData instanceof EventDataWrapper) {
             EventDataWrapper eventDataWrapper = (EventDataWrapper) eventData;
@@ -338,6 +428,24 @@ public class EventDeserializer {
             } finally {
                 inputStream.skipToTheEndOfTheBlock();
                 inputStream.skip(checksumLength);
+            }
+        } catch (IOException e) {
+            throw new EventDataDeserializationException(eventHeader, e);
+        }
+        return eventData;
+    }
+
+    private EventData deserializeEventData(BinaryLogEventDataReader eventDataReader, EventHeader eventHeader,
+                                           EventDataDeserializer eventDataDeserializer) throws EventDataDeserializationException {
+        int eventBodyLength = (int) eventHeader.getDataLength() - checksumLength;
+        EventData eventData;
+        try {
+            eventDataReader.enterBlock(eventBodyLength);
+            try {
+                eventData = eventDataDeserializer.deserialize(eventDataReader);
+            } finally {
+                eventDataReader.skipToTheEndOfTheBlock();
+                eventDataReader.skip(checksumLength);
             }
         } catch (IOException e) {
             throw new EventDataDeserializationException(eventHeader, e);
@@ -452,6 +560,16 @@ public class EventDeserializer {
             @Override
             public EventData deserialize(ByteArrayInputStream inputStream) throws IOException {
                 byte[] bytes = inputStream.read(inputStream.available());
+                EventData internalEventData = internal.deserialize(new ByteArrayInputStream(bytes));
+                EventData externalEventData = external.deserialize(new ByteArrayInputStream(bytes));
+                return new EventDataWrapper(internalEventData, externalEventData);
+            }
+
+            @Override
+            public EventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+                byte[] bytes = eventDataReader.readBytes(eventDataReader.available());
+
+                // TODO: use BinaryLogEventDataReader
                 EventData internalEventData = internal.deserialize(new ByteArrayInputStream(bytes));
                 EventData externalEventData = external.deserialize(new ByteArrayInputStream(bytes));
                 return new EventDataWrapper(internalEventData, externalEventData);

@@ -32,4 +32,12 @@ public class RowsQueryEventDataDeserializer implements EventDataDeserializer<Row
         return eventData;
     }
 
+    @Override
+    public RowsQueryEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        RowsQueryEventData eventData = new RowsQueryEventData();
+        eventDataReader.skip(1);
+        eventData.setQuery(eventDataReader.readString(eventDataReader.available()));
+        return eventData;
+    }
+
 }

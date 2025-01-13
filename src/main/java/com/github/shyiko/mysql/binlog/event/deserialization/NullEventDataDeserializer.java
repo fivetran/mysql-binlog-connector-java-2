@@ -29,4 +29,9 @@ public class NullEventDataDeserializer implements EventDataDeserializer {
     public EventData deserialize(ByteArrayInputStream inputStream) throws IOException {
         return null;
     }
+
+    @Override
+    public EventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        return null;
+    }
 }

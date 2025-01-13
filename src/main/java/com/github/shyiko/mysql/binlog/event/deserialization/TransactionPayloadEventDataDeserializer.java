@@ -99,4 +99,71 @@ public class TransactionPayloadEventDataDeserializer implements EventDataDeseria
 
         return eventData;
     }
+
+    @Override
+    public TransactionPayloadEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        TransactionPayloadEventData eventData = new TransactionPayloadEventData();
+        // Read the header fields from the event data
+        while (eventDataReader.available() > 0) {
+            int fieldType = 0;
+            int fieldLen = 0;
+            // Read the type of the field
+            if (eventDataReader.available() >= 1) {
+                fieldType = eventDataReader.readPackedInteger();
+            }
+            // We have reached the end of the Event Data Header
+            if (fieldType == OTW_PAYLOAD_HEADER_END_MARK) {
+                break;
+            }
+            // Read the size of the field
+            if (eventDataReader.available() >= 1) {
+                fieldLen = eventDataReader.readPackedInteger();
+            }
+            switch (fieldType) {
+                case OTW_PAYLOAD_SIZE_FIELD:
+                    // Fetch the payload size
+                    eventData.setPayloadSize(eventDataReader.readPackedInteger());
+                    break;
+                case OTW_PAYLOAD_COMPRESSION_TYPE_FIELD:
+                    // Fetch the compression type
+                    eventData.setCompressionType(eventDataReader.readPackedInteger());
+                    break;
+                case OTW_PAYLOAD_UNCOMPRESSED_SIZE_FIELD:
+                    // Fetch the uncompressed size
+                    eventData.setUncompressedSize(eventDataReader.readPackedInteger());
+                    break;
+                default:
+                    // Ignore unrecognized field
+                    eventDataReader.skip(fieldLen);
+                    break;
+            }
+        }
+        if (eventData.getUncompressedSize() == 0) {
+            // Default the uncompressed to the payload size
+            eventData.setUncompressedSize(eventData.getPayloadSize());
+        }
+        // set the payload to the rest of the input buffer
+        eventData.setPayload(eventDataReader.readBytes(eventData.getPayloadSize()));
+
+        // Decompress the payload
+        byte[] src = eventData.getPayload();
+        byte[] dst = ByteBuffer.allocate(eventData.getUncompressedSize()).array();
+        Zstd.decompressByteArray(dst, 0, dst.length, src, 0, src.length);
+
+        // Read and store events from decompressed byte array into input stream
+        ArrayList<Event> decompressedEvents = new ArrayList<>();
+        EventDeserializer transactionPayloadEventDeserializer = new EventDeserializer();
+        ByteArrayInputStream destinationInputStream = new ByteArrayInputStream(dst);
+
+        // TODO: use BinaryLogEventDataReader here as well
+        Event internalEvent = transactionPayloadEventDeserializer.nextEvent(destinationInputStream);
+        while (internalEvent != null) {
+            decompressedEvents.add(internalEvent);
+            internalEvent = transactionPayloadEventDeserializer.nextEvent(destinationInputStream);
+        }
+
+        eventData.setUncompressedEvents(decompressedEvents);
+
+        return eventData;
+    }
 }

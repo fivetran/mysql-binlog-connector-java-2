@@ -46,4 +46,24 @@ public class FormatDescriptionEventDataDeserializer implements EventDataDeserial
         eventData.setChecksumType(checksumType);
         return eventData;
     }
+
+    @Override
+    public FormatDescriptionEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        int eventBodyLength = eventDataReader.available();
+        FormatDescriptionEventData eventData = new FormatDescriptionEventData();
+        eventData.setBinlogVersion(eventDataReader.readInteger(2));
+        eventData.setServerVersion(eventDataReader.readString(50).trim());
+        eventDataReader.skip(4); // redundant, present in a header
+        eventData.setHeaderLength(eventDataReader.readUnsignedByte());
+        eventDataReader.skip(EventType.FORMAT_DESCRIPTION.ordinal() - 1);
+        eventData.setDataLength(eventDataReader.readUnsignedByte());
+        int checksumBlockLength = eventBodyLength - eventData.getDataLength();
+        ChecksumType checksumType = ChecksumType.NONE;
+        if (checksumBlockLength > 0) {
+            eventDataReader.skip(eventDataReader.available() - checksumBlockLength);
+            checksumType = ChecksumType.byOrdinal(eventDataReader.readUnsignedByte());
+        }
+        eventData.setChecksumType(checksumType);
+        return eventData;
+    }
 }

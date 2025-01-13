@@ -23,4 +23,11 @@ public class MariadbGtidListEventDataDeserializerTest {
         MariadbGtidListEventData eventData = deserializer.deserialize(new ByteArrayInputStream(DATA));
         assertEquals(GTID_SET_LIST, eventData.toString());
     }
+
+    @Test
+    public void deserializeReader() throws IOException {
+        MariadbGtidListEventDataDeserializer deserializer = new MariadbGtidListEventDataDeserializer();
+        MariadbGtidListEventData eventData = deserializer.deserialize(new BinaryLogEventDataReader(DATA));
+        assertEquals(GTID_SET_LIST, eventData.toString());
+    }
 }
