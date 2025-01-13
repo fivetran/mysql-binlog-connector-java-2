@@ -574,9 +574,8 @@ public class EventDeserializer {
             public EventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
                 byte[] bytes = eventDataReader.readBytes(eventDataReader.available());
 
-                // TODO: use BinaryLogEventDataReader
-                EventData internalEventData = internal.deserialize(new ByteArrayInputStream(bytes));
-                EventData externalEventData = external.deserialize(new ByteArrayInputStream(bytes));
+                EventData internalEventData = internal.deserialize(new BinaryLogEventDataReader(bytes));
+                EventData externalEventData = external.deserialize(new BinaryLogEventDataReader(bytes));
                 return new EventDataWrapper(internalEventData, externalEventData);
             }
         }

@@ -150,16 +150,14 @@ public class TransactionPayloadEventDataDeserializer implements EventDataDeseria
         byte[] dst = ByteBuffer.allocate(eventData.getUncompressedSize()).array();
         Zstd.decompressByteArray(dst, 0, dst.length, src, 0, src.length);
 
-        // Read and store events from decompressed byte array into input stream
         ArrayList<Event> decompressedEvents = new ArrayList<>();
         EventDeserializer transactionPayloadEventDeserializer = new EventDeserializer();
-        ByteArrayInputStream destinationInputStream = new ByteArrayInputStream(dst);
+        BinaryLogEventDataReader decompressedReader = new BinaryLogEventDataReader(dst);
 
-        // TODO: use BinaryLogEventDataReader here as well
-        Event internalEvent = transactionPayloadEventDeserializer.nextEvent(destinationInputStream);
+        Event internalEvent = transactionPayloadEventDeserializer.deserializeEvent(decompressedReader);
         while (internalEvent != null) {
             decompressedEvents.add(internalEvent);
-            internalEvent = transactionPayloadEventDeserializer.nextEvent(destinationInputStream);
+            internalEvent = transactionPayloadEventDeserializer.deserializeEvent(decompressedReader);
         }
 
         eventData.setUncompressedEvents(decompressedEvents);

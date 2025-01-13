@@ -70,7 +70,7 @@ public enum ColumnType {
     private static final ColumnType[] INDEX_BY_CODE;
 
     static {
-        INDEX_BY_CODE = new ColumnType[ColumnType.GEOMETRY.code];
+        INDEX_BY_CODE = new ColumnType[ColumnType.GEOMETRY.code + 1];
         for (ColumnType columnType : values()) {
             INDEX_BY_CODE[columnType.code] = columnType;
         }

@@ -405,7 +405,7 @@ public class TableMapEventMetadataDeserializer {
         private static final MetadataFieldType[] INDEX_BY_CODE;
 
         static {
-            INDEX_BY_CODE = new MetadataFieldType[MetadataFieldType.UNKNOWN_METADATA_FIELD_TYPE.code];
+            INDEX_BY_CODE = new MetadataFieldType[MetadataFieldType.UNKNOWN_METADATA_FIELD_TYPE.code + 1];
             for (MetadataFieldType fieldType : values()) {
                 INDEX_BY_CODE[fieldType.code] = fieldType;
             }
