@@ -55,11 +55,17 @@ public class RawEventsReader {
     }
 
     private int readPacketLength() throws IOException {
-        // Read size and skip sequence number.
-        int packetLength = inputStream.readInteger(3);
-        inputStream.skip(1);
+        // Read packet size (3 bytes), sequence number (1 byte, ignored) and marker (1 byte).
+        // We read all data at once to reduce the number of reads from Socket stream.
+        byte[] packetHeaderBytes = new byte[5];
+        inputStream.fill(packetHeaderBytes, 0, packetHeaderBytes.length);
 
-        int marker = inputStream.read();
+        int packetLength = 0;
+        for (int i = 0; i < 3; ++i) {
+            packetLength |= (packetHeaderBytes[i] & 0xFF) << (i << 3);
+        }
+
+        int marker = packetHeaderBytes[4] & 0xFF;
         if (marker == 0xFF) {
             ErrorPacket errorPacket = new ErrorPacket(inputStream.read(packetLength - 1));
             throw new ServerException(errorPacket.getErrorMessage(), errorPacket.getErrorCode(),
