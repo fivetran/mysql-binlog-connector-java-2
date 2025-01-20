@@ -8,6 +8,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import static junit.framework.Assert.assertEquals;
 import static org.junit.Assert.assertArrayEquals;
@@ -323,10 +324,9 @@ public class BinaryLogEventDataReaderTest {
             BinaryLogEventDataReader reader = new BinaryLogEventDataReader(ByteBuffer.wrap(currentTest.inputBytes));
 
             BitSet value = reader.readBitSet(currentTest.bitLength, false);
+            BitSet expectedValue = IntStream.of(currentTest.expectedBitsSet).collect(BitSet::new, BitSet::set, BitSet::or);
 
-            int[] actualBitsSet = getBitNumbersFromSet(value);
-
-            assertArrayEquals(String.format("Unexpected bits set in case %d", i), currentTest.expectedBitsSet, actualBitsSet);
+            assertEquals(String.format("Unexpected bits set in case %d", i), expectedValue, value);
             assertEquals(String.format("Unexpected bytes left in case %d", i), currentTest.expectedAvailableBytes, reader.available());
         }
     }
@@ -378,10 +378,9 @@ public class BinaryLogEventDataReaderTest {
             BinaryLogEventDataReader reader = new BinaryLogEventDataReader(ByteBuffer.wrap(currentTest.inputBytes));
 
             BitSet value = reader.readBitSet(currentTest.bitLength, true);
+            BitSet expectedValue = IntStream.of(currentTest.expectedBitsSet).collect(BitSet::new, BitSet::set, BitSet::or);
 
-            int[] actualBitsSet = getBitNumbersFromSet(value);
-
-            assertArrayEquals(String.format("Unexpected bits set in case %d", i), currentTest.expectedBitsSet, actualBitsSet);
+            assertEquals(String.format("Unexpected bits set in case %d", i), expectedValue, value);
             assertEquals(String.format("Unexpected bytes left in case %d", i), currentTest.expectedAvailableBytes, reader.available());
         }
     }
@@ -449,18 +448,6 @@ public class BinaryLogEventDataReaderTest {
 
         assertEquals(8, reader.available());
         assertEquals(0x66, reader.peekUnsignedByte());
-    }
-
-
-    private static int[] getBitNumbersFromSet(BitSet bitSet) {
-        List<Integer> setBits = new ArrayList<>();
-        for (int i = 0; i < bitSet.length(); i++) {
-            if (bitSet.get(i)) {
-                setBits.add(i);
-            }
-        }
-
-        return setBits.stream().mapToInt(Integer::intValue).toArray();
     }
 
     private static class BitSetTestData {

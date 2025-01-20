@@ -87,50 +87,6 @@ public class TableMapEventDataDeserializer implements EventDataDeserializer<Tabl
         return eventData;
     }
 
-    private List<Integer> numericColumnIndex(byte[] types) {
-        List<Integer> numericColumnIndexList = new ArrayList<>();
-        for (int i = 0; i < types.length; i++) {
-            switch (ColumnType.byCode(types[i] & 0xff)) {
-                case TINY:
-                case SHORT:
-                case INT24:
-                case LONG:
-                case LONGLONG:
-                case NEWDECIMAL:
-                case FLOAT:
-                case DOUBLE:
-                case YEAR:
-                    numericColumnIndexList.add(i);
-                    break;
-                default:
-                    break;
-            }
-        }
-        return numericColumnIndexList;
-    }
-
-    private int numericColumnCount(byte[] types) {
-        int count = 0;
-        for (int i = 0; i < types.length; i++) {
-            switch (ColumnType.byCode(types[i] & 0xff)) {
-                case TINY:
-                case SHORT:
-                case INT24:
-                case LONG:
-                case LONGLONG:
-                case NEWDECIMAL:
-                case FLOAT:
-                case DOUBLE:
-                case YEAR:
-                    count++;
-                    break;
-                default:
-                    break;
-            }
-        }
-        return count;
-    }
-
     private int[] readMetadata(ByteArrayInputStream inputStream, byte[] columnTypes) throws IOException {
         int[] metadata = new int[columnTypes.length];
         for (int i = 0; i < columnTypes.length; i++) {

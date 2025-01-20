@@ -46,7 +46,7 @@ public class PreviousGtidSetDeserializerTest {
         PreviousGtidSetEventData previousGtidSetData = deserializer
                 .deserialize(new ByteArrayInputStream(DATA));
 
-        assertEquals(GTID_SET, previousGtidSetData.getGtidSet());
+        assertEventData(previousGtidSetData);
     }
 
     @Test
@@ -55,6 +55,11 @@ public class PreviousGtidSetDeserializerTest {
         PreviousGtidSetEventData previousGtidSetData = deserializer
             .deserialize(new BinaryLogEventDataReader(DATA));
 
+        assertEventData(previousGtidSetData);
+    }
+
+
+    private static void assertEventData(PreviousGtidSetEventData previousGtidSetData) {
         assertEquals(GTID_SET, previousGtidSetData.getGtidSet());
     }
 }
