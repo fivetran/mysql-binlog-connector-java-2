@@ -22,7 +22,7 @@ public class AnnotateRowsEventDataDeserializerTest {
         AnnotateRowsEventDataDeserializer deserializer = new AnnotateRowsEventDataDeserializer();
         AnnotateRowsEventData eventData = deserializer.deserialize(new ByteArrayInputStream(DATA));
 
-        assertEquals(sql, eventData.getRowsQuery());
+        assertEventData(eventData);
     }
 
     @Test
@@ -30,6 +30,11 @@ public class AnnotateRowsEventDataDeserializerTest {
         AnnotateRowsEventDataDeserializer deserializer = new AnnotateRowsEventDataDeserializer();
         AnnotateRowsEventData eventData = deserializer.deserialize(new BinaryLogEventDataReader(DATA));
 
+        assertEventData(eventData);
+    }
+
+
+    private static void assertEventData(AnnotateRowsEventData eventData) {
         assertEquals(sql, eventData.getRowsQuery());
     }
 }
