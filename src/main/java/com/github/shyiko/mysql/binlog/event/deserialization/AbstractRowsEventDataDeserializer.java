@@ -22,7 +22,6 @@ import com.github.shyiko.mysql.binlog.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.Serializable;
 import java.math.BigDecimal;
-import java.sql.Time;
 import java.util.BitSet;
 import java.util.Calendar;
 import java.util.Map;
@@ -69,6 +68,8 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
 
     private static final int DIG_PER_DEC = 9;
     private static final int[] DIG_TO_BYTES = {0, 1, 1, 2, 2, 3, 3, 4, 4, 4};
+    private static final long TIMEF_OFS = 0x800000000000L;
+    private static final long TIMEF_INT_OFS = 0x800000;
 
     private final Map<Long, TableMapEventData> tableMapEventByTableId;
 
@@ -77,6 +78,7 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
     private boolean microsecondsPrecision;
     private boolean deserializeCharAndBinaryAsByteArray;
     private boolean deserializeIntegerAsByteArray;
+    private boolean deserializeWithNewTimeV2;
 
     public AbstractRowsEventDataDeserializer(Map<Long, TableMapEventData> tableMapEventByTableId) {
         this.tableMapEventByTableId = tableMapEventByTableId;
@@ -101,6 +103,10 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
 
     void setDeserializeIntegerAsByteArray(boolean deserializeIntegerAsByteArray) {
         this.deserializeIntegerAsByteArray = deserializeIntegerAsByteArray;
+    }
+
+    void setDeserializeWithNewTimeV2(boolean deserializeWithNewTimeV2) {
+        this.deserializeWithNewTimeV2 = deserializeWithNewTimeV2;
     }
 
     protected Serializable[] deserializeRow(long tableId, BitSet includedColumns, ByteArrayInputStream inputStream)
@@ -173,7 +179,11 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
             case TIME:
                 return deserializeTime(inputStream);
             case TIME_V2:
-                return deserializeTimeV2(meta, inputStream);
+                if (deserializeWithNewTimeV2) {
+                    return deserializeTimeV2New(meta, inputStream);
+                } else {
+                    return deserializeTimeV2(meta, inputStream);
+                }
             case TIMESTAMP:
                 return deserializeTimestamp(inputStream);
             case TIMESTAMP_V2:
@@ -315,6 +325,63 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
             return castTimestamp(timestamp, fsp);
         }
         return timestamp != null ? convertLongTimestamptWithFSP(timestamp, fsp) : null;
+    }
+
+    protected Serializable deserializeTimeV2New(int meta, ByteArrayInputStream inputStream) throws IOException {
+        long result;
+        long intPart;
+        long fracPart;
+
+        switch (meta) {
+            case 1: case 2:
+                intPart = bigEndianLong(inputStream.read(3), 0, 3) - TIMEF_INT_OFS;
+                fracPart = bigEndianLong(inputStream.read(1), 0, 1);
+
+                if (intPart < 0 && fracPart != 0) {
+                    /*
+                       Negative values are stored with reverse fractional part order,
+                       for binary sort compatibility.
+
+                         Disk value  intpart fracPart   Time value   Memory value
+                         800000.00    0      0      00:00:00.00  0000000000.000000
+                         7FFFFF.FF   -1      255   -00:00:00.01  FFFFFFFFFF.FFD8F0
+                         7FFFFF.9D   -1      99    -00:00:00.99  FFFFFFFFFF.F0E4D0
+                         7FFFFF.00   -1      0     -00:00:01.00  FFFFFFFFFF.000000
+                         7FFFFE.FF   -1      255   -00:00:01.01  FFFFFFFFFE.FFD8F0
+                         7FFFFE.F6   -2      246   -00:00:01.10  FFFFFFFFFE.FE7960
+
+                         Formula to convert fractional part from disk format
+                         (now stored in "fracPart" variable) to absolute value: "0x100 - fracPart".
+                         To reconstruct in-memory value, we shift
+                         to the next integer value and then substruct fractional part.
+                    */
+                    intPart++;      /* Shift to the next integer value */
+                    fracPart -= 0x100;   /* -(0x100 - fracPart) */
+                }
+                result = (intPart << 24) + (fracPart * 10000);
+                break;
+            case 3: case 4:
+                intPart = bigEndianLong(inputStream.read(3), 0, 3) - TIMEF_INT_OFS;
+                fracPart = bigEndianLong(inputStream.read(2), 0, 2);
+                if (intPart < 0 && fracPart != 0) {
+                    /*
+                       Fix reverse fractional part order: "0x10000 - fracPart".
+                       See comments for FSP=1 and FSP=2 above.
+                    */
+                    intPart++;          /* Shift to the next integer value */
+                    fracPart -= 0x10000;    /* -(0x10000-fracPart) */
+                }
+                result = (intPart << 24) + (fracPart * 100);
+                break;
+            case 5: case 6:
+                result = bigEndianLong(inputStream.read(6), 0, 6) - TIMEF_OFS;
+                break;
+            default:
+                intPart = bigEndianLong(inputStream.read(3), 0, 3) - TIMEF_INT_OFS;
+                result = intPart << 24;
+        }
+
+        return result;
     }
 
     protected Serializable deserializeTimestamp(ByteArrayInputStream inputStream) throws IOException {

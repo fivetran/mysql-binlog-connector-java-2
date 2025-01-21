@@ -217,6 +217,7 @@ public class EventDeserializer {
             deserializer.setDeserializeIntegerAsByteArray(
                 compatibilitySet.contains(CompatibilityMode.INTEGER_AS_BYTE_ARRAY)
             );
+            deserializer.setDeserializeWithNewTimeV2(compatibilitySet.contains(CompatibilityMode.USE_NEW_TIME_DESERIALIZER));
         }
     }
 
@@ -396,7 +397,11 @@ public class EventDeserializer {
         /**
          * Return TINY/SHORT/INT24/LONG/LONGLONG values as byte[]|s (instead of int|s).
          */
-        INTEGER_AS_BYTE_ARRAY
+        INTEGER_AS_BYTE_ARRAY,
+        /**
+         * Use new time deserializer; fix for negative TIME values
+         */
+        USE_NEW_TIME_DESERIALIZER
     }
 
     /**
