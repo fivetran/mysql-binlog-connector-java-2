@@ -18,9 +18,18 @@ public class RawEventsReader {
     }
 
     /**
-     * Reads next {@link RawBinaryLogEvent} from the stream returning the event or {@code null} if the end of the stream
-     * is reached.
-     * @throws IOException on stream read error.
+     * Reads the next {@link RawBinaryLogEvent} from the binlog stream.
+     * <p>
+     * This method returns:
+     * <ul>
+     *   <li>A {@link RawBinaryLogEvent} containing event data, if data is successfully read from the binlog stream.</li>
+     *   <li>A {@link RawBinaryLogEvent} with {@link RawBinaryLogEvent#isServerEof()} returning {@code true}
+     *   if the server has sent EOF status explicitly.</li>
+     *   <li>{@code null} if the connection drops without receiving an EOF status.</li>
+     * </ul>
+     *
+     * @throws IOException if an I/O error occurs while reading the event.
+     * @return the next {@link RawBinaryLogEvent} or {@code null} if the stream ended unexpectedly.
      */
     public RawBinaryLogEvent nextRawEvent() throws IOException {
         // End of stream reached.
@@ -51,9 +60,14 @@ public class RawEventsReader {
 
         inputStream.fill(packetBytes, currentPosition, chunkLength);
 
-        return new RawBinaryLogEvent(packetBytes);
+        return RawBinaryLogEvent.createDataEvent(packetBytes);
     }
 
+    /**
+     * Reads packet header and returns packet length. Returns -1 if EOF packet is received.
+     * @throws IOException on stream read error.
+     * @throws ServerException if server returns an error.
+     */
     private int readPacketLength() throws IOException {
         // Read packet size (3 bytes), sequence number (1 byte, ignored) and marker (1 byte).
         // We read all data at once to reduce the number of reads from Socket stream.

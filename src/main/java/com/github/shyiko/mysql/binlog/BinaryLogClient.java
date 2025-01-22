@@ -15,16 +15,7 @@
  */
 package com.github.shyiko.mysql.binlog;
 
-import com.github.shyiko.mysql.binlog.event.AnnotateRowsEventData;
-import com.github.shyiko.mysql.binlog.event.Event;
-import com.github.shyiko.mysql.binlog.event.EventHeader;
-import com.github.shyiko.mysql.binlog.event.EventHeaderV4;
-import com.github.shyiko.mysql.binlog.event.EventType;
-import com.github.shyiko.mysql.binlog.event.GtidEventData;
-import com.github.shyiko.mysql.binlog.event.MariadbGtidEventData;
-import com.github.shyiko.mysql.binlog.event.MariadbGtidListEventData;
-import com.github.shyiko.mysql.binlog.event.QueryEventData;
-import com.github.shyiko.mysql.binlog.event.RotateEventData;
+import com.github.shyiko.mysql.binlog.event.*;
 import com.github.shyiko.mysql.binlog.event.deserialization.AnnotateRowsEventDataDeserializer;
 import com.github.shyiko.mysql.binlog.event.deserialization.ChecksumType;
 import com.github.shyiko.mysql.binlog.event.deserialization.EventDataDeserializationException;
@@ -37,6 +28,7 @@ import com.github.shyiko.mysql.binlog.event.deserialization.MariadbGtidListEvent
 import com.github.shyiko.mysql.binlog.event.deserialization.QueryEventDataDeserializer;
 import com.github.shyiko.mysql.binlog.event.deserialization.RotateEventDataDeserializer;
 import com.github.shyiko.mysql.binlog.io.ByteArrayInputStream;
+import com.github.shyiko.mysql.binlog.io.RawEventsReader;
 import com.github.shyiko.mysql.binlog.jmx.BinaryLogClientMXBean;
 import com.github.shyiko.mysql.binlog.network.AuthenticationException;
 import com.github.shyiko.mysql.binlog.network.Authenticator;
@@ -174,6 +166,7 @@ public class BinaryLogClient implements BinaryLogClientMXBean {
     private final Lock connectLock = new ReentrantLock();
     private final Lock keepAliveThreadExecutorLock = new ReentrantLock();
     private boolean useSendAnnotateRowsEvent;
+    private boolean useBufferedDeserialization;
 
     private BinaryLogDatabaseVersion databaseVersion;
     private int mariaDbSlaveCapability = 4;
@@ -549,6 +542,10 @@ public class BinaryLogClient implements BinaryLogClientMXBean {
         this.useSendAnnotateRowsEvent = useSendAnnotateRowsEvent;
     }
 
+    public void setUseBufferedDeserialization(boolean useBufferedDeserialization) {
+        this.useBufferedDeserialization = useBufferedDeserialization;
+    }
+
     /**
      * @return the configured MariaDB slave compatibility level, defaults to 4.
      */
@@ -662,7 +659,12 @@ public class BinaryLogClient implements BinaryLogClientMXBean {
                     ensureGtidEventDataDeserializer();
                 }
             }
-            listenForEventPackets();
+
+            if (useBufferedDeserialization) {
+                bufferedListenForEventPackets();
+            } else {
+                listenForEventPackets();
+            }
         } finally {
             connectLock.unlock();
             if (notifyWhenDisconnected) {
@@ -1068,6 +1070,62 @@ public class BinaryLogClient implements BinaryLogClientMXBean {
         eventDeserializer.setChecksumType(checksumType);
     }
 
+    protected void bufferedListenForEventPackets() throws IOException {
+        abortRequest = false;
+        ByteArrayInputStream inputStream = channel.getInputStream();
+        RawEventsReader eventsReader = new RawEventsReader(inputStream);
+        boolean completeShutdown = false;
+        try {
+            RawBinaryLogEvent rawEvent;
+            while (!abortRequest && (rawEvent = eventsReader.nextRawEvent()) != null) {
+                if (rawEvent.isServerEof() && !blocking) {
+                    completeShutdown = true;
+                    break;
+                }
+
+                Event event;
+                try {
+                    event = eventDeserializer.deserializeEvent(rawEvent.getEventDataReader());
+                    if (event == null) {
+                        throw new EOFException();
+                    }
+                } catch (Exception e) {
+                    Throwable cause = e instanceof EventDataDeserializationException ? e.getCause() : e;
+                    if (cause instanceof EOFException || cause instanceof SocketException) {
+                        throw e;
+                    }
+                    if (isConnected()) {
+                        for (LifecycleListener lifecycleListener : lifecycleListeners) {
+                            lifecycleListener.onEventDeserializationFailure(this, e);
+                        }
+                    }
+                    continue;
+                }
+                if (isConnected()) {
+                    eventLastSeen = System.currentTimeMillis();
+                    updateGtidSet(event);
+                    notifyEventListeners(event);
+                    updateClientBinlogFilenameAndPosition(event);
+                }
+            }
+        } catch (Exception e) {
+            if (isConnected()) {
+                for (LifecycleListener lifecycleListener : lifecycleListeners) {
+                    lifecycleListener.onCommunicationFailure(this, e);
+                }
+            }
+        } finally {
+            abortRequest = false;
+            if (isConnected()) {
+                if (completeShutdown) {
+                    disconnect(); // initiate complete shutdown sequence (which includes keep alive thread)
+                } else {
+                    disconnectChannel();
+                }
+            }
+        }
+    }
+
     protected void listenForEventPackets() throws IOException {
         abortRequest = false;
         ByteArrayInputStream inputStream = channel.getInputStream();
@@ -1278,7 +1336,7 @@ public class BinaryLogClient implements BinaryLogClientMXBean {
         eventListeners.remove(eventListener);
     }
 
-    private void notifyEventListeners(Event event) {
+    protected void notifyEventListeners(Event event) {
         if (event.getData() instanceof EventDataWrapper) {
             event = new Event(event.getHeader(), ((EventDataWrapper) event.getData()).getExternal());
         }
@@ -1388,6 +1446,7 @@ public class BinaryLogClient implements BinaryLogClientMXBean {
     private void disconnectChannel() throws IOException {
         disconnectChannel(false);
     }
+
     private void disconnectChannel(boolean force) throws IOException {
         connected = false;
         if (channel != null && channel.isOpen()) {
@@ -1396,6 +1455,14 @@ public class BinaryLogClient implements BinaryLogClientMXBean {
             }
             channel.close();
         }
+    }
+
+    /**
+     * {@link BinaryLogClient}'s event listener.
+     */
+    public interface EventListener {
+
+        void onEvent(Event event);
     }
 
     /**

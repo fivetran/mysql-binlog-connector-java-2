@@ -577,7 +577,7 @@ public class JsonBinaryValueIntegrationTest {
     public void afterEachTest() throws Exception {
         final CountDownLatch latch = new CountDownLatch(1);
         final String markerQuery = "drop table if exists _EOS_marker";
-        EventListener markerInterceptor = event -> {
+        BinaryLogClient.EventListener markerInterceptor = event -> {
             if (event.getHeader().getEventType() == EventType.QUERY) {
                 EventData data = event.getData();
                 if (data != null) {
