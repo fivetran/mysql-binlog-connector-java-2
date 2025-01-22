@@ -753,6 +753,7 @@ public class BinaryLogClientIntegrationTest extends AbstractIntegrationTest {
                 inOrder.verify(lifecycleListenerMock).onCommunicationFailure(eq(clientWithKeepAlive),
                         any(EOFException.class));
                 inOrder.verify(lifecycleListenerMock).onDisconnect(eq(clientWithKeepAlive));
+                inOrder.verify(lifecycleListenerMock).beforeConnect(eq(clientWithKeepAlive));
                 inOrder.verify(lifecycleListenerMock).onConnect(eq(clientWithKeepAlive));
                 verifyNoMoreInteractions(lifecycleListenerMock);
             } finally {
