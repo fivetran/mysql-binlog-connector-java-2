@@ -154,10 +154,9 @@ public class TransactionPayloadEventDataDeserializer implements EventDataDeseria
         EventDeserializer transactionPayloadEventDeserializer = new EventDeserializer();
         BinaryLogEventDataReader decompressedReader = new BinaryLogEventDataReader(dst);
 
-        Event internalEvent = transactionPayloadEventDeserializer.deserializeEvent(decompressedReader);
-        while (internalEvent != null) {
+        while (decompressedReader.available() > 0) {
+            Event internalEvent = transactionPayloadEventDeserializer.deserializeEvent(decompressedReader);
             decompressedEvents.add(internalEvent);
-            internalEvent = transactionPayloadEventDeserializer.deserializeEvent(decompressedReader);
         }
 
         eventData.setUncompressedEvents(decompressedEvents);
