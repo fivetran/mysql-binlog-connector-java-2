@@ -9,7 +9,7 @@ import java.util.Arrays;
 
 public class RawEventsReader {
     // https://dev.mysql.com/doc/internals/en/sending-more-than-16mbyte.html
-    private static final int MAX_PACKET_LENGTH = 16777215;
+    public static final int MAX_PACKET_LENGTH = 16777215;
 
     private final ByteArrayInputStream inputStream;
 
@@ -29,6 +29,7 @@ public class RawEventsReader {
      * </ul>
      *
      * @throws IOException if an I/O error occurs while reading the event.
+     * @throws ServerException if the server returns an error.
      * @return the next {@link RawBinaryLogEvent} or {@code null} if the stream ended unexpectedly.
      */
     public RawBinaryLogEvent nextRawEvent() throws IOException {
@@ -39,13 +40,13 @@ public class RawEventsReader {
 
         int packetLength = readPacketLength();
         if (packetLength == -1) {
-            return null;
+            return RawBinaryLogEvent.createServerEof();
         }
-
-        byte[] packetBytes = new byte[packetLength];
 
         // We always skip 1 byte from the first packet due to status byte that is only present in the first packet.
         int chunkLength = packetLength - 1;
+        byte[] packetBytes = new byte[chunkLength];
+
         int currentPosition = 0;
         while (packetLength == MAX_PACKET_LENGTH) {
             inputStream.fill(packetBytes, currentPosition, chunkLength);
