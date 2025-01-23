@@ -36,4 +36,19 @@ public class MariadbGtidListEventDataDeserializer implements EventDataDeserializ
         eventData.setMariaGTIDSet(mariaGTIDSet);
         return eventData;
     }
+
+    @Override
+    public MariadbGtidListEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        MariadbGtidListEventData eventData = new MariadbGtidListEventData();
+        long gtidLength = eventDataReader.readInteger(4);
+        MariadbGtidSet mariaGTIDSet = new MariadbGtidSet();
+        for (int i = 0; i < gtidLength; i++) {
+            long domainId = eventDataReader.readInteger(4);
+            long serverId = eventDataReader.readInteger(4);
+            long sequence = eventDataReader.readLong(8);
+            mariaGTIDSet.add(new MariadbGtidSet.MariaGtid(domainId, serverId, sequence));
+        }
+        eventData.setMariaGTIDSet(mariaGTIDSet);
+        return eventData;
+    }
 }

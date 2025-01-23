@@ -27,4 +27,5 @@ import java.io.IOException;
 public interface EventDataDeserializer<T extends EventData> {
 
     T deserialize(ByteArrayInputStream inputStream) throws IOException;
+    T deserialize(BinaryLogEventDataReader eventDataReader) throws IOException;
 }

@@ -33,4 +33,12 @@ public class BinlogCheckpointEventDataDeserializer implements EventDataDeseriali
         eventData.setLogFileName(inputStream.readString(length));
         return eventData;
     }
+
+    @Override
+    public BinlogCheckpointEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        BinlogCheckpointEventData eventData = new BinlogCheckpointEventData();
+        int length = eventDataReader.readInteger(4);
+        eventData.setLogFileName(eventDataReader.readString(length));
+        return eventData;
+    }
 }

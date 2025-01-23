@@ -5,23 +5,68 @@ import com.github.shyiko.mysql.binlog.io.ByteArrayInputStream;
 import org.testng.annotations.Test;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 import static org.testng.Assert.*;
 
 public class MysqlGtidEventDataDeserializerTest {
 
+    public static final byte[] MYSQL4_BYTES = {
+        0x03, //flags
+        0x24, (byte) 0xbc, 0x78, 0x50, 0x2c, 0x16, 0x11, (byte) 0xe6, // sourceId mostSignificantBits big endian
+        (byte) 0xa0, 0x73, 0x02, 0x42, (byte) 0xac, 0x11, 0x00, 0x02, // sourceId leastSignificantBits big endian
+        (byte) 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 // sequence little endian
+    };
+    public static final byte[] MYSQL801_BYTES = {
+        0x01, // flags
+        (byte) 0xaa, (byte) 0xe5, 0x7b, 0x2f, (byte) 0x8e, 0x44, 0x11, (byte) 0xee, // sourceId mostSignificantBits big endian
+        (byte) 0xa3, (byte) 0xd6, (byte) 0xa0, 0x36, (byte) 0xbc, (byte) 0xda, 0x1a, 0x41, // sourceId leastSignificantBits big endian
+        0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence little endian
+        0x02, // MTR
+        0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // last committed
+        0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence number
+        (byte) 0x97, (byte) 0xef, 0x0c, 0x25, 0x3f, 0x0b, 0x06, // commit timestamp
+    };
+    public static final byte[] MYSQL802_BYTES = {
+        0x00, // flags
+        (byte) 0x99, 0x4a, (byte) 0xb8, 0x59, (byte) 0x8e, (byte) 0xa8, 0x11, (byte) 0xee, // sourceId mostSignificantBits big endian
+        (byte) 0xa5, 0x68, (byte) 0xa0, 0x36, (byte) 0xbc, (byte) 0xda, 0x1a, 0x41, // sourceId leastSignificantBits big endian
+        0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence little endian
+        0x02, // MTR
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // last committed
+        0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence number
+        0x40, 0x55, 0x04, (byte) 0xc4, 0x48, 0x0b, 0x06, // commit timestamp
+        (byte) 0xfc, 0x34, 0x01, // transaction length
+    };
+    public static final byte[] MYSQL810_BYTES = {
+        0x00, // flags
+        (byte) 0xbd, (byte) 0x97, (byte) 0x94, (byte) 0xe0, 0x1d, 0x65, 0x11, (byte) 0xed, // sourceId mostSignificantBits big endian
+        (byte) 0xa7, (byte) 0xe7, 0x0a, (byte) 0xdb, 0x30, 0x5b, 0x3a, 0x12, // sourceId leastSignificantBits big endian
+        0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence little endian
+        0x02, // MTR
+        0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // last committed
+        0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence number
+        0x66, 0x29, (byte) 0xaa, 0x69, 0x55, 0x09, 0x06, // commit timestamp
+        (byte) 0xfc, 0x3b, 0x01, // transaction length
+        (byte) 0xe4, 0x38, 0x01, 0x00, // immediate server version
+    };
     private GtidEventDataDeserializer deserializer = new GtidEventDataDeserializer();
 
     @Test
     public void testDeserialize() throws IOException {
-        GtidEventData data = deserializer.deserialize(new ByteArrayInputStream(
-            new byte[]{
-                0x03, //flags
-                0x24, (byte) 0xbc, 0x78, 0x50, 0x2c, 0x16, 0x11, (byte) 0xe6, // sourceId mostSignificantBits big endian
-                (byte) 0xa0, 0x73, 0x02, 0x42, (byte) 0xac, 0x11, 0x00, 0x02, // sourceId leastSignificantBits big endian
-                (byte) 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 // sequence little endian
-            }
-        ));
+        GtidEventData data = deserializer.deserialize(new ByteArrayInputStream(MYSQL4_BYTES));
+        assertMysql4EventData(data);
+    }
+
+    @Test
+    public void testDeserializeStream() throws IOException {
+        GtidEventData data = deserializer.deserialize(new BinaryLogEventDataReader(MYSQL4_BYTES));
+
+        assertMysql4EventData(data);
+    }
+
+
+    private static void assertMysql4EventData(GtidEventData data) {
         assertEquals(data.getFlags(), 0x03);
         assertEquals(data.getMySqlGtid().toString(), "24bc7850-2c16-11e6-a073-0242ac110002:11");
         assertEquals(data.getLastCommitted(), 0);
@@ -31,18 +76,17 @@ public class MysqlGtidEventDataDeserializerTest {
 
     @Test
     public void testDeserializeMySQL801() throws IOException {
-        GtidEventData data = deserializer.deserialize(new ByteArrayInputStream(
-            new byte[]{
-                0x01, // flags
-                (byte) 0xaa, (byte) 0xe5, 0x7b, 0x2f, (byte) 0x8e, 0x44, 0x11, (byte) 0xee, // sourceId mostSignificantBits big endian
-                (byte) 0xa3, (byte) 0xd6, (byte) 0xa0, 0x36, (byte) 0xbc, (byte) 0xda, 0x1a, 0x41, // sourceId leastSignificantBits big endian
-                0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence little endian
-                0x02, // MTR
-                0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // last committed
-                0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence number
-                (byte) 0x97, (byte) 0xef, 0x0c, 0x25, 0x3f, 0x0b, 0x06, // commit timestamp
-            }
-        ));
+        GtidEventData data = deserializer.deserialize(new ByteArrayInputStream(MYSQL801_BYTES));
+        assertMysql801EventData(data);
+    }
+
+    @Test
+    public void testDeserializeMySQL801Reader() throws IOException {
+        GtidEventData data = deserializer.deserialize(new BinaryLogEventDataReader(MYSQL801_BYTES));
+        assertMysql801EventData(data);
+    }
+
+    private static void assertMysql801EventData(GtidEventData data) {
         assertEquals(data.getFlags(), 0x01);
         assertEquals(data.getMySqlGtid().toString(), "aae57b2f-8e44-11ee-a3d6-a036bcda1a41:4");
         assertEquals(data.getLastCommitted(), 3);
@@ -57,19 +101,17 @@ public class MysqlGtidEventDataDeserializerTest {
 
     @Test
     public void testDeserializeMySQL802() throws IOException {
-        GtidEventData data = deserializer.deserialize(new ByteArrayInputStream(
-            new byte[]{
-                0x00, // flags
-                (byte) 0x99, 0x4a, (byte) 0xb8, 0x59, (byte) 0x8e, (byte) 0xa8, 0x11, (byte) 0xee, // sourceId mostSignificantBits big endian
-                (byte) 0xa5, 0x68, (byte) 0xa0, 0x36, (byte) 0xbc, (byte) 0xda, 0x1a, 0x41, // sourceId leastSignificantBits big endian
-                0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence little endian
-                0x02, // MTR
-                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // last committed
-                0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence number
-                0x40, 0x55, 0x04, (byte) 0xc4, 0x48, 0x0b, 0x06, // commit timestamp
-                (byte) 0xfc, 0x34, 0x01, // transaction length
-            }
-        ));
+        GtidEventData data = deserializer.deserialize(new ByteArrayInputStream(MYSQL802_BYTES));
+        assertMysql802EventData(data);
+    }
+
+    @Test
+    public void testDeserializeMySQL802Reader() throws IOException {
+        GtidEventData data = deserializer.deserialize(new BinaryLogEventDataReader(MYSQL802_BYTES));
+        assertMysql802EventData(data);
+    }
+
+    private static void assertMysql802EventData(GtidEventData data) {
         assertEquals(data.getFlags(), 0x00);
         assertEquals(data.getMySqlGtid().toString(), "994ab859-8ea8-11ee-a568-a036bcda1a41:3");
         assertEquals(data.getLastCommitted(), 2);
@@ -84,20 +126,17 @@ public class MysqlGtidEventDataDeserializerTest {
 
     @Test
     public void testDeserializeMySQL810() throws IOException {
-        GtidEventData data = deserializer.deserialize(new ByteArrayInputStream(
-            new byte[]{
-                0x00, // flags
-                (byte) 0xbd, (byte) 0x97, (byte) 0x94, (byte) 0xe0, 0x1d, 0x65, 0x11, (byte) 0xed, // sourceId mostSignificantBits big endian
-                (byte) 0xa7, (byte) 0xe7, 0x0a, (byte) 0xdb, 0x30, 0x5b, 0x3a, 0x12, // sourceId leastSignificantBits big endian
-                0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence little endian
-                0x02, // MTR
-                0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // last committed
-                0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sequence number
-                0x66, 0x29, (byte) 0xaa, 0x69, 0x55, 0x09, 0x06, // commit timestamp
-                (byte) 0xfc, 0x3b, 0x01, // transaction length
-                (byte) 0xe4, 0x38, 0x01, 0x00, // immediate server version
-            }
-        ));
+        GtidEventData data = deserializer.deserialize(new ByteArrayInputStream(MYSQL810_BYTES));
+        assertMysql810EventData(data);
+    }
+
+    @Test
+    public void testDeserializeMySQL810Reader() throws IOException {
+        GtidEventData data = deserializer.deserialize(new BinaryLogEventDataReader(MYSQL810_BYTES));
+        assertMysql810EventData(data);
+    }
+
+    private static void assertMysql810EventData(GtidEventData data) {
         assertEquals(data.getFlags(), 0x00);
         assertEquals(data.getMySqlGtid().toString(), "bd9794e0-1d65-11ed-a7e7-0adb305b3a12:9");
         assertEquals(data.getLastCommitted(), 7);

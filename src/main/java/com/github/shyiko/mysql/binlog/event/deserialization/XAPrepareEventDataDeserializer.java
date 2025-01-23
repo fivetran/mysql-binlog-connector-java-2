@@ -44,4 +44,17 @@ public class XAPrepareEventDataDeserializer implements EventDataDeserializer<XAP
 
         return xaPrepareEventData;
     }
+
+    @Override
+    public XAPrepareEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        XAPrepareEventData xaPrepareEventData = new XAPrepareEventData();
+        xaPrepareEventData.setOnePhase(eventDataReader.readByte() != 0x00);
+        xaPrepareEventData.setFormatID(eventDataReader.readInteger(4));
+        xaPrepareEventData.setGtridLength(eventDataReader.readInteger(4));
+        xaPrepareEventData.setBqualLength(eventDataReader.readInteger(4));
+        xaPrepareEventData.setData(eventDataReader.readBytes(
+            xaPrepareEventData.getGtridLength() + xaPrepareEventData.getBqualLength()));
+
+        return xaPrepareEventData;
+    }
 }

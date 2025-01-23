@@ -38,6 +38,18 @@ public class EventHeaderV4Deserializer implements EventHeaderDeserializer<EventH
         return header;
     }
 
+    @Override
+    public EventHeaderV4 deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        EventHeaderV4 header = new EventHeaderV4();
+        header.setTimestamp(eventDataReader.readLong(4) * 1000L);
+        header.setEventType(getEventType(eventDataReader.readUnsignedByte()));
+        header.setServerId(eventDataReader.readLong(4));
+        header.setEventLength(eventDataReader.readLong(4));
+        header.setNextPosition(eventDataReader.readLong(4));
+        header.setFlags(eventDataReader.readInteger(2));
+        return header;
+    }
+
     private static EventType getEventType(int ordinal) {
         EventType eventType = EventType.byEventNumber(ordinal);
         return eventType == null ? EventType.UNKNOWN : eventType;
