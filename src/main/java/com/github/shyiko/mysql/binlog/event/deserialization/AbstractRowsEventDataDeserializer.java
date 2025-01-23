@@ -284,7 +284,11 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
             case TIME:
                 return deserializeTime(eventDataReader);
             case TIME_V2:
-                return deserializeTimeV2(meta, eventDataReader);
+                if (deserializeWithNewTimeV2) {
+                    return deserializeTimeV2New(meta, eventDataReader);
+                } else {
+                    return deserializeTimeV2(meta, eventDataReader);
+                }
             case TIMESTAMP:
                 return deserializeTimestamp(eventDataReader);
             case TIMESTAMP_V2:
@@ -581,6 +585,64 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
                 break;
             default:
                 intPart = bigEndianLong(inputStream.read(3), 0, 3) - TIMEF_INT_OFS;
+                result = intPart << 24;
+        }
+
+        return result;
+    }
+
+    protected Serializable deserializeTimeV2New(int meta, BinaryLogEventDataReader eventDataReader) throws IOException {
+        long result;
+        long intPart;
+        long fracPart;
+
+        switch (meta) {
+            case 1: case 2:
+                intPart = eventDataReader.readLongBE(3) - TIMEF_INT_OFS;
+                fracPart = eventDataReader.readUnsignedByte();
+
+
+                if (intPart < 0 && fracPart != 0) {
+                    /*
+                       Negative values are stored with reverse fractional part order,
+                       for binary sort compatibility.
+
+                         Disk value  intpart fracPart   Time value   Memory value
+                         800000.00    0      0      00:00:00.00  0000000000.000000
+                         7FFFFF.FF   -1      255   -00:00:00.01  FFFFFFFFFF.FFD8F0
+                         7FFFFF.9D   -1      99    -00:00:00.99  FFFFFFFFFF.F0E4D0
+                         7FFFFF.00   -1      0     -00:00:01.00  FFFFFFFFFF.000000
+                         7FFFFE.FF   -1      255   -00:00:01.01  FFFFFFFFFE.FFD8F0
+                         7FFFFE.F6   -2      246   -00:00:01.10  FFFFFFFFFE.FE7960
+
+                         Formula to convert fractional part from disk format
+                         (now stored in "fracPart" variable) to absolute value: "0x100 - fracPart".
+                         To reconstruct in-memory value, we shift
+                         to the next integer value and then substruct fractional part.
+                    */
+                    intPart++;      /* Shift to the next integer value */
+                    fracPart -= 0x100;   /* -(0x100 - fracPart) */
+                }
+                result = (intPart << 24) + (fracPart * 10000);
+                break;
+            case 3: case 4:
+                intPart = eventDataReader.readLongBE(3) - TIMEF_INT_OFS;
+                fracPart = eventDataReader.readLongBE(2);
+                if (intPart < 0 && fracPart != 0) {
+                    /*
+                       Fix reverse fractional part order: "0x10000 - fracPart".
+                       See comments for FSP=1 and FSP=2 above.
+                    */
+                    intPart++;          /* Shift to the next integer value */
+                    fracPart -= 0x10000;    /* -(0x10000-fracPart) */
+                }
+                result = (intPart << 24) + (fracPart * 100);
+                break;
+            case 5: case 6:
+                result = eventDataReader.readLongBE(6) - TIMEF_OFS;
+                break;
+            default:
+                intPart = eventDataReader.readLongBE(3) - TIMEF_INT_OFS;
                 result = intPart << 24;
         }
 
