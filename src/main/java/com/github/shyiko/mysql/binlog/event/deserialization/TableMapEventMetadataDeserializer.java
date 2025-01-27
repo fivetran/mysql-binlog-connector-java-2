@@ -308,7 +308,7 @@ public class TableMapEventMetadataDeserializer {
         return result;
     }
 
-    private static List<Integer> readIntegers(BinaryLogEventDataReader eventDataReader) {
+    private static List<Integer> readIntegers(BinaryLogEventDataReader eventDataReader) throws IOException {
         List<Integer> result = new ArrayList<>();
         while (eventDataReader.available() > 0) {
             result.add(eventDataReader.readPackedInteger());
@@ -324,7 +324,7 @@ public class TableMapEventMetadataDeserializer {
         return columnNames;
     }
 
-    private static List<String> readColumnNames(BinaryLogEventDataReader eventDataReader) {
+    private static List<String> readColumnNames(BinaryLogEventDataReader eventDataReader) throws IOException {
         List<String> columnNames = new ArrayList<>();
         while (eventDataReader.available() > 0) {
             columnNames.add(eventDataReader.readLengthEncodedString());
@@ -345,7 +345,7 @@ public class TableMapEventMetadataDeserializer {
         return result;
     }
 
-    private static List<String[]> readTypeValues(BinaryLogEventDataReader eventDataReader) {
+    private static List<String[]> readTypeValues(BinaryLogEventDataReader eventDataReader) throws IOException {
         List<String[]> result = new ArrayList<>();
         while (eventDataReader.available() > 0) {
             int valuesCount = eventDataReader.readPackedInteger();

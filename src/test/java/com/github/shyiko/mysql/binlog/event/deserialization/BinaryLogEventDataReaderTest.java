@@ -190,7 +190,7 @@ public class BinaryLogEventDataReaderTest {
     }
 
     @Test
-    public void readPackedLong_shouldProperlyHandlePackedLongValues() {
+    public void readPackedLong_shouldProperlyHandlePackedLongValues() throws IOException {
         PackedNumberTestData[] testData = {
             new PackedNumberTestData(new byte[]{0x0a, 0x02}, 0x0aL, 1),
             new PackedNumberTestData(new byte[]{(byte)0xfa, (byte)0xa2, 0x12, 0x45, 0x11, (byte)0xd1, 0x11, 0x22, 0x33, 0x44}, 0xfaL, 9),
@@ -211,7 +211,7 @@ public class BinaryLogEventDataReaderTest {
     }
 
     @Test
-    public void readPackedInteger_shouldProperlyHandlePackedIntegerValues() {
+    public void readPackedInteger_shouldProperlyHandlePackedIntegerValues() throws IOException {
         PackedNumberTestData[] testData = {
             new PackedNumberTestData(new byte[]{0x0a, 0x02}, 0x0aL, 1),
             new PackedNumberTestData(new byte[]{(byte)0xfa, (byte)0xa2, 0x12, 0x45, 0x11, (byte)0xd1, 0x11, 0x22, 0x33, 0x44}, 0xfaL, 9),
@@ -231,8 +231,8 @@ public class BinaryLogEventDataReaderTest {
         }
     }
 
-    @Test(expected = RuntimeException.class)
-    public void readPackedInteger_shouldThrowExceptionOnOverflow() {
+    @Test(expected = IOException.class)
+    public void readPackedInteger_shouldThrowExceptionOnOverflow() throws IOException {
         byte[] data = {(byte)0xfe, (byte)0xa2, 0x12, 0x45, 0x11, (byte)0xd1, 0x11, 0x22, 0x33, 0x44};
         BinaryLogEventDataReader reader = new BinaryLogEventDataReader(ByteBuffer.wrap(data));
 
@@ -251,7 +251,7 @@ public class BinaryLogEventDataReaderTest {
     }
 
     @Test
-    public void readLengthEncodedString_shouldProperlyDecodeStrings() {
+    public void readLengthEncodedString_shouldProperlyDecodeStrings() throws IOException {
         byte[] data = {0x07, 0x66, 0x6f, 0x6f, 0x2d, 0x62, 0x61, 0x72, 0x12, 0x61};
         BinaryLogEventDataReader reader = new BinaryLogEventDataReader(ByteBuffer.wrap(data));
 

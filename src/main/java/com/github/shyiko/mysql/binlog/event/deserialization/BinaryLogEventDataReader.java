@@ -172,13 +172,15 @@ public class BinaryLogEventDataReader {
      * 253 - Three more bytes are used. The number is in the range 0xffff-0xffffff.<br>
      * 254 - Eight more bytes are used. The number is in the range 0xffffff-0xffffffffffffffff.
      * @return long or null
+     * @throws IOException if unexpected bytes are encountered (IOException is used for compatibility with
+     *                     {@link com.github.shyiko.mysql.binlog.io.ByteArrayInputStream}.
      */
-    public long readPackedLong() {
+    public long readPackedLong() throws IOException {
         int b = (buffer.get() & 0xFF);
         if (b < 251) {
             return b;
         } else if (b == 251) {
-            throw new RuntimeException("Unexpected NULL value");
+            throw new IOException("Unexpected NULL value");
         } else if (b == 252) {
             return (buffer.getShort() & 0xFFFFL);
         } else if (b == 253) {
@@ -192,11 +194,13 @@ public class BinaryLogEventDataReader {
     /**
      * Reads packed integer value from the current position in the buffer. Similar to {@link #readPackedLong()} but
      * makes sure that the number read is fit into integer.
+     * @throws IOException if unexpected bytes are encountered or in case of integer overflow (IOException is used for
+     *                      compatibility with {@link com.github.shyiko.mysql.binlog.io.ByteArrayInputStream}.
      */
-    public int readPackedInteger() {
+    public int readPackedInteger() throws IOException {
         long value = readPackedLong();
         if (value > Integer.MAX_VALUE || value < Integer.MIN_VALUE) {
-            throw new RuntimeException("Packed integer " + value + " is out of Integer range");
+            throw new IOException("Packed integer " + value + " is out of Integer range");
         }
         return (int)value;
     }
@@ -236,7 +240,7 @@ public class BinaryLogEventDataReader {
     /**
      * Reads a string prepended by a packed integer length from the current position in the buffer.
      */
-    public String readLengthEncodedString() {
+    public String readLengthEncodedString() throws IOException {
         return readString(readPackedInteger());
     }
 
