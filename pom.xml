@@ -138,6 +138,8 @@
                     <includes>
                         <include>**/*IntegrationTest.java</include>
                     </includes>
+                    <!-- Needed because the project uses the old mockito version -->
+                    <argLine>--add-opens=java.base/java.lang=ALL-UNNAMED</argLine>
                 </configuration>
                 <executions>
                     <execution>
@@ -166,6 +168,10 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
                 <version>3.4.0</version>
+                <configuration>
+                    <!-- Fixes https://bugs.openjdk.org/browse/JDK-8223552 -->
+                    <doclint>-html</doclint>
+                </configuration>
                 <executions>
                     <execution>
                         <id>attach-javadocs</id>

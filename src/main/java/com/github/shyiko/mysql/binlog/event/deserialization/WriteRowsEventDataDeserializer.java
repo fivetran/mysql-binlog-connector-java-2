@@ -57,6 +57,21 @@ public class WriteRowsEventDataDeserializer extends AbstractRowsEventDataDeseria
         return eventData;
     }
 
+    @Override
+    public WriteRowsEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        WriteRowsEventData eventData = new WriteRowsEventData();
+        // 6 bytes - tableId, 2 bytes - reserved
+        eventData.setTableId(eventDataReader.readLongWithSkip(2));
+        if (mayContainExtraInformation) {
+            int extraInfoLength = eventDataReader.readInteger(2);
+            eventDataReader.skip(extraInfoLength - 2);
+        }
+        int numberOfColumns = eventDataReader.readPackedInteger();
+        eventData.setIncludedColumns(eventDataReader.readBitSet(numberOfColumns, true));
+        eventData.setRows(deserializeRows(eventData.getTableId(), eventData.getIncludedColumns(), eventDataReader));
+        return eventData;
+    }
+
     private List<Serializable[]> deserializeRows(long tableId, BitSet includedColumns, ByteArrayInputStream inputStream)
             throws IOException {
         List<Serializable[]> result = new LinkedList<Serializable[]>();
@@ -66,4 +81,12 @@ public class WriteRowsEventDataDeserializer extends AbstractRowsEventDataDeseria
         return result;
     }
 
+    private List<Serializable[]> deserializeRows(long tableId, BitSet includedColumns, BinaryLogEventDataReader eventDataReader)
+        throws IOException {
+        List<Serializable[]> result = new LinkedList<>();
+        while (eventDataReader.available() > 0) {
+            result.add(deserializeRow(tableId, includedColumns, eventDataReader));
+        }
+        return result;
+    }
 }

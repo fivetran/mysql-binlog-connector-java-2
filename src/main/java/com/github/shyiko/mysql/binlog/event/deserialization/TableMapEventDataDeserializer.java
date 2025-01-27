@@ -56,48 +56,35 @@ public class TableMapEventDataDeserializer implements EventDataDeserializer<Tabl
         return eventData;
     }
 
-    private List<Integer> numericColumnIndex(byte[] types) {
-        List<Integer> numericColumnIndexList = new ArrayList<>();
-        for (int i = 0; i < types.length; i++) {
-            switch (ColumnType.byCode(types[i] & 0xff)) {
-                case TINY:
-                case SHORT:
-                case INT24:
-                case LONG:
-                case LONGLONG:
-                case NEWDECIMAL:
-                case FLOAT:
-                case DOUBLE:
-                case YEAR:
-                    numericColumnIndexList.add(i);
-                    break;
-                default:
-                    break;
-            }
-        }
-        return numericColumnIndexList;
-    }
+    @Override
+    public TableMapEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        TableMapEventData eventData = new TableMapEventData();
+        // 6-bytes - tableId, 2 bytes - reserved.
+        eventData.setTableId(eventDataReader.readLongWithSkip(2));
 
-    private int numericColumnCount(byte[] types) {
-        int count = 0;
-        for (int i = 0; i < types.length; i++) {
-            switch (ColumnType.byCode(types[i] & 0xff)) {
-                case TINY:
-                case SHORT:
-                case INT24:
-                case LONG:
-                case LONGLONG:
-                case NEWDECIMAL:
-                case FLOAT:
-                case DOUBLE:
-                case YEAR:
-                    count++;
-                    break;
-                default:
-                    break;
-            }
+        int dbNameSize = eventDataReader.readUnsignedByte();
+        eventData.setDatabase(eventDataReader.readZeroTerminatedStringWithHint(dbNameSize));
+
+        int tableNameSize = eventDataReader.readUnsignedByte();
+        eventData.setTable(eventDataReader.readZeroTerminatedStringWithHint(tableNameSize));
+
+        int numberOfColumns = eventDataReader.readPackedInteger();
+        eventData.setColumnTypes(eventDataReader.readBytes(numberOfColumns));
+
+        eventDataReader.readPackedInteger(); // metadata length
+        eventData.setColumnMetadata(readMetadata(eventDataReader, eventData.getColumnTypes()));
+        eventData.setColumnNullability(eventDataReader.readBitSet(numberOfColumns, true));
+        int metadataLength = eventDataReader.available();
+        TableMapEventMetadata metadata = null;
+        if (metadataLength > 0) {
+            metadata = metadataDeserializer.deserialize(
+                eventDataReader,
+                eventData.getColumnTypes().length,
+                eventData.getColumnTypes()
+            );
         }
-        return count;
+        eventData.setEventMetadata(metadata);
+        return eventData;
     }
 
     private int[] readMetadata(ByteArrayInputStream inputStream, byte[] columnTypes) throws IOException {
@@ -125,6 +112,39 @@ public class TableMapEventDataDeserializer implements EventDataDeserializer<Tabl
                 case DATETIME_V2:
                 case TIMESTAMP_V2:
                     metadata[i] = inputStream.readInteger(1); // fsp (@see {@link ColumnType})
+                    break;
+                default:
+                    metadata[i] = 0;
+            }
+        }
+        return metadata;
+    }
+
+    private int[] readMetadata(BinaryLogEventDataReader eventDataReader, byte[] columnTypes) {
+        int[] metadata = new int[columnTypes.length];
+        for (int i = 0; i < columnTypes.length; i++) {
+            switch (ColumnType.byCode(columnTypes[i] & 0xFF)) {
+                case FLOAT:
+                case DOUBLE:
+                case BLOB:
+                case JSON:
+                case GEOMETRY:
+                    metadata[i] = eventDataReader.readUnsignedByte();
+                    break;
+                case BIT:
+                case VARCHAR:
+                case NEWDECIMAL:
+                    metadata[i] = eventDataReader.readInteger(2);
+                    break;
+                case SET:
+                case ENUM:
+                case STRING:
+                    metadata[i] = eventDataReader.readIntegerBE(2);
+                    break;
+                case TIME_V2:
+                case DATETIME_V2:
+                case TIMESTAMP_V2:
+                    metadata[i] = eventDataReader.readUnsignedByte();
                     break;
                 default:
                     metadata[i] = 0;

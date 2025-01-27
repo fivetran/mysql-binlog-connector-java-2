@@ -59,6 +59,22 @@ public class UpdateRowsEventDataDeserializer extends AbstractRowsEventDataDeseri
         return eventData;
     }
 
+    @Override
+    public UpdateRowsEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        UpdateRowsEventData eventData = new UpdateRowsEventData();
+        eventData.setTableId(eventDataReader.readLongWithSkip(2));
+
+        if (mayContainExtraInformation) {
+            int extraInfoLength = eventDataReader.readInteger(2);
+            eventDataReader.skip(extraInfoLength - 2);
+        }
+        int numberOfColumns = eventDataReader.readPackedInteger();
+        eventData.setIncludedColumnsBeforeUpdate(eventDataReader.readBitSet(numberOfColumns, true));
+        eventData.setIncludedColumns(eventDataReader.readBitSet(numberOfColumns, true));
+        eventData.setRows(deserializeRows(eventData, eventDataReader));
+        return eventData;
+    }
+
     private List<Map.Entry<Serializable[], Serializable[]>> deserializeRows(UpdateRowsEventData eventData,
             ByteArrayInputStream inputStream) throws IOException {
         long tableId = eventData.getTableId();
@@ -75,4 +91,18 @@ public class UpdateRowsEventDataDeserializer extends AbstractRowsEventDataDeseri
         return rows;
     }
 
+    private List<Map.Entry<Serializable[], Serializable[]>> deserializeRows(UpdateRowsEventData eventData,
+                                                                            BinaryLogEventDataReader eventDataReader) throws IOException {
+        long tableId = eventData.getTableId();
+        BitSet includedColumnsBeforeUpdate = eventData.getIncludedColumnsBeforeUpdate(),
+            includedColumns = eventData.getIncludedColumns();
+        List<Map.Entry<Serializable[], Serializable[]>> rows = new ArrayList<>();
+        while (eventDataReader.available() > 0) {
+            rows.add(new AbstractMap.SimpleEntry<>(
+                deserializeRow(tableId, includedColumnsBeforeUpdate, eventDataReader),
+                deserializeRow(tableId, includedColumns, eventDataReader)
+            ));
+        }
+        return rows;
+    }
 }

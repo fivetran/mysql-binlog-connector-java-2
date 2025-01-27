@@ -12,10 +12,11 @@ public class MySqlGtid {
     }
 
     public static MySqlGtid fromString(String gtid) {
-        String[] split = gtid.split(":");
-        String sourceId = split[0];
-        long transactionId = Long.parseLong(split[1]);
-        return new MySqlGtid(UUID.fromString(sourceId), transactionId);
+        int separatorPos = gtid.indexOf(":");
+        // Consider switching to Long.parseLong(CharSequence, int, int, int) after upgrading to JDK 9 or above
+        // for a substantial performance boost.
+        long transactionId = Long.parseLong(gtid.substring(separatorPos + 1));
+        return new MySqlGtid(UUID.fromString(gtid.substring(0, separatorPos)), transactionId);
     }
 
     @Override

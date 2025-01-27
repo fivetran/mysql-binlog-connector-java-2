@@ -21,4 +21,11 @@ public class AnnotateRowsEventDataDeserializer implements EventDataDeserializer<
         event.setRowsQuery(inputStream.readString(inputStream.available()));
         return event;
     }
+
+    @Override
+    public AnnotateRowsEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        AnnotateRowsEventData event = new AnnotateRowsEventData();
+        event.setRowsQuery(eventDataReader.readString(eventDataReader.available()));
+        return event;
+    }
 }
