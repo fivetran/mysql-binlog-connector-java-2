@@ -914,11 +914,6 @@ public abstract class AbstractRowsEventDataDeserializer<T extends EventData> imp
 
     private static int numberOfBitsSet(BitSet bitSet) {
         return bitSet.cardinality();
-//        int result = 0;
-//        for (int i = bitSet.nextSetBit(0); i >= 0; i = bitSet.nextSetBit(i + 1)) {
-//            result++;
-//        }
-//        return result;
     }
 
     private static int[] split(long value, int divider, int length) {
