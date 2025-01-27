@@ -252,8 +252,8 @@ public class TableMapEventMetadataDeserializer {
         return result;
     }
 
-
-    private static BitSet readBooleanList(ByteArrayInputStream inputStream, int length) throws IOException {
+    // The method is visible for testing purposes.
+    public static BitSet readBooleanList(ByteArrayInputStream inputStream, int length) throws IOException {
         BitSet result = new BitSet();
         // according to MySQL internals the amount of storage required for N columns is INT((N+7)/8) bytes
         byte[] bytes = inputStream.read((length + 7) >> 3);
@@ -265,7 +265,8 @@ public class TableMapEventMetadataDeserializer {
         return result;
     }
 
-    private static BitSet readBooleanList(BinaryLogEventDataReader eventDataReader, int length) {
+    // The method is visible for testing purposes.
+    public static BitSet readBooleanList(BinaryLogEventDataReader eventDataReader, int length) {
         byte[] bytes = eventDataReader.readBytes((length + 7) >> 3);
 
         // Bit reversion is taken from Hacker's Delight 2nd Edition 7-1.
@@ -276,6 +277,8 @@ public class TableMapEventMetadataDeserializer {
             b = (byte)(((b & 0x0f) << 4) | ((b >>> 4) & 0x0f));
             bytes[i] = b;
         }
+        byte mask = (byte)(0xff >> (bytes.length * 8 - length));
+        bytes[bytes.length - 1] = (byte)(bytes[bytes.length - 1] & mask);
 
         return BitSet.valueOf(bytes);
     }

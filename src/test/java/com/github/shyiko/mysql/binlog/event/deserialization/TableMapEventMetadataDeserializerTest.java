@@ -5,11 +5,13 @@ import com.github.shyiko.mysql.binlog.io.ByteArrayInputStream;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.BitSet;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 import org.junit.Assert;
+
+import static junit.framework.Assert.assertEquals;
 
 public class TableMapEventMetadataDeserializerTest {
     private static final byte[] DATA = {
@@ -36,6 +38,48 @@ public class TableMapEventMetadataDeserializerTest {
         TableMapEventData actual = deserializer.deserialize(new BinaryLogEventDataReader(DATA));
 
         assertEventData(actual);
+    }
+
+    @Test
+    public void readBooleanList_shouldConsistentlyDeserializeBitSet() throws IOException{
+        ReadBooleanListTestData[] testData = {
+            // 01100101 -> 01100xxx -> {1, 2}
+            new ReadBooleanListTestData(new byte[]{0x65}, 5, new int[]{1, 2}),
+            // 01100101 -> 01100101 -> {1, 2, 5, 7}
+            new ReadBooleanListTestData(new byte[]{0x65}, 8, new int[]{1, 2, 5, 7}),
+            // 01011101 00010001 -> 01011101 000xxxxx -> {1, 3, 4, 5, 7}
+            new ReadBooleanListTestData(new byte[]{0x5d, 0x11}, 11, new int[]{1, 3, 4, 5, 7}),
+            // 01001000 11111111 -> 01001000 1111111x -> {1, 4, 8, 9, 10, 11, 12, 13, 14}
+            new ReadBooleanListTestData(new byte[]{0x48, (byte)0xff}, 15, new int[]{1, 4, 8, 9, 10, 11, 12, 13, 14}),
+            // 01010101 01101100 01000011 -> 01010101 01101100 0100001x -> {1, 3, 5, 7, 9, 10, 12, 13, 17, 22}
+            new ReadBooleanListTestData(new byte[]{0x55, 0x6c, 0x43}, 23, new int[]{1, 3, 5, 7, 9, 10, 12, 13, 17, 22}),
+        };
+
+        for (int i = 0; i < testData.length; i++) {
+            ReadBooleanListTestData currentTest = testData[i];
+            BinaryLogEventDataReader reader = new BinaryLogEventDataReader(ByteBuffer.wrap(currentTest.data));
+            ByteArrayInputStream inputStream = new ByteArrayInputStream(currentTest.data);
+
+            BitSet readerBitSet = TableMapEventMetadataDeserializer.readBooleanList(reader, currentTest.length);
+            BitSet streamBitSet = TableMapEventMetadataDeserializer.readBooleanList(inputStream, currentTest.length);
+
+            BitSet expectedBitSet = IntStream.of(currentTest.expectedBitsSet).collect(BitSet::new, BitSet::set, BitSet::or);
+
+            assertEquals(String.format("Unexpected bits set in case %d", i), expectedBitSet, readerBitSet);
+            assertEquals(String.format("Reader and stream results don't match in case %d", i), streamBitSet, readerBitSet);
+        }
+    }
+
+    public static class ReadBooleanListTestData {
+        public final byte[] data;
+        public final int length;
+        public final int[] expectedBitsSet;
+
+        public ReadBooleanListTestData(byte[] data, int length, int[] expectedBitsSet) {
+            this.data = data;
+            this.length = length;
+            this.expectedBitsSet = expectedBitsSet;
+        }
     }
 
     private static void assertEventData(TableMapEventData actual) {
