@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * @author <a href="mailto:stanley.shyiko@gmail.com">Stanley Shyiko</a>
  */
 public class BinaryLogClientStatistics implements BinaryLogClientStatisticsMXBean,
-        BinaryLogClient.EventListener, BinaryLogClient.LifecycleListener {
+    BinaryLogClient.EventListener, BinaryLogClient.LifecycleListener {
 
     private AtomicReference<EventHeader> lastEventHeader = new AtomicReference<EventHeader>();
     private AtomicLong timestampOfLastEvent = new AtomicLong();

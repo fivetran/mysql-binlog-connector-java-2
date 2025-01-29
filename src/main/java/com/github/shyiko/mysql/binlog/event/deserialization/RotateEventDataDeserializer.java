@@ -32,4 +32,12 @@ public class RotateEventDataDeserializer implements EventDataDeserializer<Rotate
         eventData.setBinlogFilename(inputStream.readString(inputStream.available()));
         return eventData;
     }
+
+    @Override
+    public RotateEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        RotateEventData eventData = new RotateEventData();
+        eventData.setBinlogPosition(eventDataReader.readLong(8));
+        eventData.setBinlogFilename(eventDataReader.readString(eventDataReader.available()));
+        return eventData;
+    }
 }

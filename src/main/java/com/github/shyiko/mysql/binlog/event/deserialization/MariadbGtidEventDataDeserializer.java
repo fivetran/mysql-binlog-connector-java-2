@@ -31,4 +31,14 @@ public class MariadbGtidEventDataDeserializer implements EventDataDeserializer<M
         // Flags ignore
         return event;
     }
+
+    @Override
+    public MariadbGtidEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        MariadbGtidEventData event = new MariadbGtidEventData();
+        event.setSequence(eventDataReader.readLong(8));
+        event.setDomainId(eventDataReader.readInteger(4));
+        event.setFlags(eventDataReader.readUnsignedByte());
+        // Flags ignore
+        return event;
+    }
 }

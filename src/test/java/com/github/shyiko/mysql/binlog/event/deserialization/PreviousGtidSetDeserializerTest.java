@@ -18,6 +18,7 @@ package com.github.shyiko.mysql.binlog.event.deserialization;
 import static junit.framework.Assert.assertEquals;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 import org.junit.Test;
 
@@ -45,7 +46,20 @@ public class PreviousGtidSetDeserializerTest {
         PreviousGtidSetEventData previousGtidSetData = deserializer
                 .deserialize(new ByteArrayInputStream(DATA));
 
-        assertEquals(GTID_SET, previousGtidSetData.getGtidSet());
+        assertEventData(previousGtidSetData);
     }
 
+    @Test
+    public void deserializeReader() throws IOException {
+        PreviousGtidSetDeserializer deserializer = new PreviousGtidSetDeserializer();
+        PreviousGtidSetEventData previousGtidSetData = deserializer
+            .deserialize(new BinaryLogEventDataReader(DATA));
+
+        assertEventData(previousGtidSetData);
+    }
+
+
+    private static void assertEventData(PreviousGtidSetEventData previousGtidSetData) {
+        assertEquals(GTID_SET, previousGtidSetData.getGtidSet());
+    }
 }

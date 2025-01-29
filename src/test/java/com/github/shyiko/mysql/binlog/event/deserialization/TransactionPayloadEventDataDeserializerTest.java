@@ -87,14 +87,28 @@ public class TransactionPayloadEventDataDeserializerTest {
         TransactionPayloadEventDataDeserializer deserializer = new TransactionPayloadEventDataDeserializer();
         TransactionPayloadEventData transactionPayloadEventData =
             deserializer.deserialize(new ByteArrayInputStream(DATA));
-          assertEquals(COMPRESSION_TYPE, transactionPayloadEventData.getCompressionType());
-          assertEquals(PAYLOAD_SIZE, transactionPayloadEventData.getPayloadSize());
-          assertEquals(UNCOMPRESSED_SIZE, transactionPayloadEventData.getUncompressedSize());
-          assertEquals(NUMBER_OF_UNCOMPRESSED_EVENTS, transactionPayloadEventData.getUncompressedEvents().size());
-          assertEquals(EventType.QUERY, transactionPayloadEventData.getUncompressedEvents().get(0).getHeader().getEventType());
-          assertEquals(EventType.TABLE_MAP, transactionPayloadEventData.getUncompressedEvents().get(1).getHeader().getEventType());
-          assertEquals(EventType.EXT_UPDATE_ROWS, transactionPayloadEventData.getUncompressedEvents().get(2).getHeader().getEventType());
-          assertEquals(EventType.XID, transactionPayloadEventData.getUncompressedEvents().get(3).getHeader().getEventType());
-          assertEquals(UNCOMPRESSED_UPDATE_EVENT, transactionPayloadEventData.getUncompressedEvents().get(2).getData().toString());
+
+        assertEventData(transactionPayloadEventData);
+    }
+
+    @Test
+    public void deserializeReader() throws IOException {
+        TransactionPayloadEventDataDeserializer deserializer = new TransactionPayloadEventDataDeserializer();
+        TransactionPayloadEventData transactionPayloadEventData =
+            deserializer.deserialize(new BinaryLogEventDataReader(DATA));
+
+        assertEventData(transactionPayloadEventData);
+    }
+
+    private static void assertEventData(TransactionPayloadEventData transactionPayloadEventData) {
+        assertEquals(COMPRESSION_TYPE, transactionPayloadEventData.getCompressionType());
+        assertEquals(PAYLOAD_SIZE, transactionPayloadEventData.getPayloadSize());
+        assertEquals(UNCOMPRESSED_SIZE, transactionPayloadEventData.getUncompressedSize());
+        assertEquals(NUMBER_OF_UNCOMPRESSED_EVENTS, transactionPayloadEventData.getUncompressedEvents().size());
+        assertEquals(EventType.QUERY, transactionPayloadEventData.getUncompressedEvents().get(0).getHeader().getEventType());
+        assertEquals(EventType.TABLE_MAP, transactionPayloadEventData.getUncompressedEvents().get(1).getHeader().getEventType());
+        assertEquals(EventType.EXT_UPDATE_ROWS, transactionPayloadEventData.getUncompressedEvents().get(2).getHeader().getEventType());
+        assertEquals(EventType.XID, transactionPayloadEventData.getUncompressedEvents().get(3).getHeader().getEventType());
+        assertEquals(UNCOMPRESSED_UPDATE_EVENT, transactionPayloadEventData.getUncompressedEvents().get(2).getData().toString());
     }
 }

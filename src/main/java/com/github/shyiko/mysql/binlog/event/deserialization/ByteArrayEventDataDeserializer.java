@@ -31,4 +31,11 @@ public class ByteArrayEventDataDeserializer implements EventDataDeserializer<Byt
         eventData.setData(inputStream.read(inputStream.available()));
         return eventData;
     }
+
+    @Override
+    public ByteArrayEventData deserialize(BinaryLogEventDataReader eventDataReader) throws IOException {
+        ByteArrayEventData eventData = new ByteArrayEventData();
+        eventData.setData(eventDataReader.readBytes(eventDataReader.available()));
+        return eventData;
+    }
 }
