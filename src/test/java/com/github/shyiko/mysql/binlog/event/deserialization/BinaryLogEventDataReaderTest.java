@@ -303,7 +303,7 @@ public class BinaryLogEventDataReaderTest {
     public void readBitSet_shouldProperlyDecodeLittleEndianBitSets() {
         BitSetTestData[] testData = {
             // 0101 1101 0001 0001 -> read 1 byte
-            // 0101 1101 -> take 8 bits
+            // 0101 1101 -> take 4 bits
             // XXXX 1101 -> 0, 2, 3 bits set
             new BitSetTestData(
                 new byte[]{0x5d, 0x11}, 4, new int[]{0, 2, 3}, 1),
@@ -357,7 +357,7 @@ public class BinaryLogEventDataReaderTest {
     public void readBitSet_shouldProperlyDecodeBigEndianBitSets() {
         BitSetTestData[] testData = {
             // 0101 1101 0001 0001 -> read 1 byte
-            // 0101 1101 -> take 8 bits
+            // 0101 1101 -> take 4 bits
             // XXXX 1101 -> 0, 2, 3 bits set
             new BitSetTestData(
                 new byte[]{0x5d, 0x11}, 4, new int[]{0, 2, 3}, 1),
